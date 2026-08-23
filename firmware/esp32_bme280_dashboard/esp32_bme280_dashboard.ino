@@ -37,7 +37,7 @@ String htmlEscape(const String& s) {
 void readBme280() {
   lastTemperature = bme.readTemperature();
   lastHumidity = bme.readHumidity();
-  lastPressure = bme.readPressure() / 100.0f;
+  lastPressure = bme.readPressure();
   lastMeasurementMs = millis();
 }
 
@@ -70,13 +70,22 @@ String gaugeHtml(const char* label, float value, float minValue, float maxValue,
   String s;
   s += "<div class='card'>";
   s += "<div class='label'>" + htmlEscape(label) + "</div>";
-  s += "<div class='gauge'>";
-  s += "<div class='needle' style='transform:rotate(" + String(angle) + "deg)'></div>";
+  s += "<div class='gauge' data-angle='" + String(angle) + "'>";
+  s += "<div class='needle'></div>";
   s += "<div class='center'></div>";
   s += "</div>";
   s += "<div class='value' style='color:" + String(color) + "'>" + String(value, 1) + " " + htmlEscape(unit) + "</div>";
   s += "</div>";
   return s;
+}
+
+String ageText(unsigned long msAgo) {
+  unsigned long seconds = msAgo / 1000UL;
+  if (seconds < 60) return String(seconds) + " s ago";
+  unsigned long minutes = seconds / 60UL;
+  if (minutes < 60) return String(minutes) + " min ago";
+  unsigned long hours = minutes / 60UL;
+  return String(hours) + " h ago";
 }
 
 String buildPage() {
@@ -94,9 +103,13 @@ String buildPage() {
   page += F(".card{background:linear-gradient(180deg,rgba(15,23,42,.95),rgba(15,23,42,.72));border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:20px;box-shadow:0 16px 50px rgba(0,0,0,.35)}");
   page += F(".label{font-size:13px;opacity:.8;margin-bottom:14px;letter-spacing:.08em;text-transform:uppercase}");
   page += F(".value{font-size:30px;font-weight:800;margin-top:14px;text-align:center;letter-spacing:.01em}");
+  page += F(".sub{margin-top:8px;text-align:center;opacity:.7;font-size:13px}");
   page += F(".gauge{position:relative;width:180px;height:90px;margin:0 auto;border-radius:180px 180px 0 0;background:conic-gradient(from 180deg,#22c55e 0 33%,#eab308 33% 66%,#ef4444 66% 100%);overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}");
   page += F(".gauge:after{content:'';position:absolute;left:18px;right:18px;bottom:0;height:72px;background:radial-gradient(circle at center,#0f172a,#030712);border-radius:180px 180px 0 0}");
   page += F(".needle{position:absolute;left:50%;bottom:0;width:4px;height:78px;background:linear-gradient(180deg,#f8fafc,#38bdf8);transform-origin:bottom center;border-radius:99px;z-index:2;box-shadow:0 0 12px rgba(56,189,248,.55)}");
+  page += F(".gauge[data-angle] .needle{transform:rotate(var(--angle,0deg));transition:transform .7s cubic-bezier(.22,1,.36,1)}");
+  page += F(".card{animation:fadeUp .45s ease both}");
+  page += F("@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}");
   page += F(".center{position:absolute;left:50%;bottom:-6px;width:18px;height:18px;background:#f8fafc;border-radius:50%;transform:translateX(-50%);z-index:3}");
   page += F(".actions{margin-top:22px;display:flex;gap:12px;flex-wrap:wrap}");
   page += F("button,a.btn{border:0;border-radius:14px;padding:14px 18px;font-weight:700;text-decoration:none;cursor:pointer;transition:transform .15s ease,opacity .15s ease}");
@@ -104,17 +117,27 @@ String buildPage() {
   page += F(".primary{background:linear-gradient(135deg,#38bdf8,#2563eb);color:#eff6ff;box-shadow:0 8px 24px rgba(37,99,235,.32)}");
   page += F(".ghost{background:rgba(31,41,55,.9);color:#e5e7eb;border:1px solid rgba(148,163,184,.15)}");
   page += F(".meta{margin-top:14px;opacity:.72;font-size:14px}");
-  page += F("</style></head><body><div class='wrap'>");
+  page += F(".updated{animation:pulse .5s ease}");
+  page += F("@keyframes pulse{0%{opacity:.6;transform:scale(.98)}100%{opacity:1;transform:scale(1)}}");
+  page += F(".gauge{--angle:0deg}");
+  page += F(".gauge[data-angle='");
+  page += String(-120);
+  page += F("']{--angle:");
+  page += String(-120);
+  page += F("deg}");
+  page += F("</style><script>");
+  page += F("window.addEventListener('load',()=>{document.querySelectorAll('.gauge').forEach(g=>{const a=g.dataset.angle||0;g.style.setProperty('--angle',a+'deg');});const m=document.querySelector('.meta');if(m)m.classList.add('updated');});");
+  page += F("</script></head><body><div class='wrap'>");
   page += F("<div class='top'><div><h1>ESP32 Home Dashboard</h1><div class='meta'>Live BME280 data from your sensor</div></div>");
   page += F("<div class='actions'><a class='btn primary' href='/measure'>Measure now</a><a class='btn ghost' href='/refresh'>Refresh</a></div></div>");
   page += F("<div class='grid'>");
   page += gaugeHtml("Temperature", lastTemperature, -10, 50, "°C", "#38bdf8");
   page += gaugeHtml("Humidity", lastHumidity, 0, 100, "%", "#22c55e");
-  page += gaugeHtml("Pressure", lastPressure, 950, 1050, "hPa", "#f59e0b");
+  page += gaugeHtml("Pressure", lastPressure, 95000, 105000, "Pa", "#f59e0b");
   page += F("</div>");
   page += F("<div class='meta'>Last measurement: ");
-  page += String(lastMeasurementMs ? (millis() - lastMeasurementMs) / 1000 : 0);
-  page += F(" s ago</div>");
+  page += ageText(lastMeasurementMs ? (millis() - lastMeasurementMs) : 0);
+  page += F("</div>");
   page += F("</div></body></html>");
   return page;
 }
@@ -125,7 +148,6 @@ void handleRoot() {
 
 void handleMeasure() {
   readBme280();
-  sendToThingSpeak(lastTemperature, lastHumidity, lastPressure);
   server.sendHeader("Location", "/");
   server.send(302, "text/plain", "Measured");
 }
