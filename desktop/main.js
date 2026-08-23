@@ -13,8 +13,16 @@ const HOTZONE_SIZE = 90;   // px width of the hover strip when collapsed
 const PANEL_WIDTH = 300;   // px width of the fully expanded panel
 const PANEL_GAP = 10;      // px gap between the floating panel and the true screen edge
 const VERTICAL_SPAN = 0.5; // bubble/panel occupy the middle 50% of the screen height (25%-75%)
-const ANIMATION_MS = 320;
-const ANIMATION_FRAME_MS = 16; // ~60fps steps
+
+// The reveal/hide itself is a pure CSS opacity+transform transition in the
+// renderer (GPU-composited, real 60fps) — the native window is only ever
+// resized ONCE per transition, at a moment when the content is fully
+// invisible (opacity 0), so there is no visible "jump" and no risk of the
+// old scrollbar-flash bug (which happened because the window shrank frame by
+// frame while the panel was still visibly `display:flex`). This also avoids
+// needing any click-through/setIgnoreMouseEvents trickery: the window is
+// always exactly the size of whatever should currently be interactive.
+const REVEAL_MS = 320; // must match the CSS transition duration in panel.css
 
 const defaultConfig = {
   address: 'esp32-home.local',
@@ -50,14 +58,14 @@ let config = loadConfig();
 let panelWindow;
 let tray;
 let expanded = false;
-let animating = false;
 let pollTimer = null;
+let collapseTimer = null; // pending native shrink after the collapse CSS animation finishes
 
 function getDisplayWorkArea() {
   return screen.getPrimaryDisplay().workArea;
 }
 
-// widthPx: current window width. gapPx: distance between the window's outer
+// widthPx: target window width. gapPx: distance between the window's outer
 // edge and the true screen edge (0 when collapsed/flush, PANEL_GAP when the
 // panel is floating). Both bubble and panel share the same 25%-75% vertical
 // span of the screen.
@@ -72,52 +80,42 @@ function boundsFor(widthPx, gapPx) {
   return { x, y, width: widthPx, height };
 }
 
-function easeOutCubic(t) {
-  return 1 - Math.pow(1 - t, 3);
-}
-
-function animateTo(targetWidth, targetGap, onDone) {
-  if (!panelWindow) return;
-  animating = true;
-  const startBounds = panelWindow.getBounds();
-  const startWidth = startBounds.width;
-  const startGap = expanded ? PANEL_GAP : 0; // gap state we're animating away from
-  const totalSteps = Math.max(1, Math.round(ANIMATION_MS / ANIMATION_FRAME_MS));
-  let step = 0;
-
-  const timer = setInterval(() => {
-    step += 1;
-    const progress = easeOutCubic(Math.min(1, step / totalSteps));
-    const width = Math.round(startWidth + (targetWidth - startWidth) * progress);
-    const gap = startGap + (targetGap - startGap) * progress;
-    panelWindow.setBounds(boundsFor(width, gap));
-
-    if (step >= totalSteps) {
-      clearInterval(timer);
-      panelWindow.setBounds(boundsFor(targetWidth, targetGap));
-      animating = false;
-      if (onDone) onDone();
-    }
-  }, ANIMATION_FRAME_MS);
-}
-
 function expandPanel() {
-  if (expanded || animating) return;
+  if (expanded) return;
   expanded = true;
+  if (collapseTimer) {
+    clearTimeout(collapseTimer);
+    collapseTimer = null;
+  }
+  // Grow the window to the panel's exact size FIRST, while it's still fully
+  // transparent/invisible (opacity 0) — then trigger the CSS reveal. The
+  // resize itself is invisible because there's nothing rendered yet at the
+  // new size.
+  panelWindow.setBounds(boundsFor(PANEL_WIDTH, PANEL_GAP));
   panelWindow.webContents.send('panel:state', 'expanded');
-  animateTo(PANEL_WIDTH, PANEL_GAP);
 }
 
 function collapsePanel() {
-  if (!expanded || animating) return;
+  if (!expanded) return;
   expanded = false;
-  animateTo(HOTZONE_SIZE, 0, () => {
-    panelWindow.webContents.send('panel:state', 'collapsed');
-  });
+  // Tell the renderer to start the fade/slide-out CSS transition first...
+  panelWindow.webContents.send('panel:state', 'collapsed');
+  // ...and only shrink the native window back down to the hotzone size once
+  // that transition has finished, so the panel is fully invisible by the
+  // time the resize happens (no visible clipping/flash).
+  if (collapseTimer) clearTimeout(collapseTimer);
+  collapseTimer = setTimeout(() => {
+    panelWindow.setBounds(boundsFor(HOTZONE_SIZE, 0));
+    collapseTimer = null;
+  }, REVEAL_MS);
 }
 
 function repositionForEdgeChange() {
   if (!panelWindow) return;
+  if (collapseTimer) {
+    clearTimeout(collapseTimer);
+    collapseTimer = null;
+  }
   const width = expanded ? PANEL_WIDTH : HOTZONE_SIZE;
   const gap = expanded ? PANEL_GAP : 0;
   panelWindow.setBounds(boundsFor(width, gap));
