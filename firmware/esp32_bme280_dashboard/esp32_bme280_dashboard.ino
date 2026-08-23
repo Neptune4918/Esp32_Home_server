@@ -88,8 +88,8 @@ String gaugeHtml(const char* label, float value, float minValue, float maxValue,
   String s;
   s += "<div class='card'>";
   s += "<div class='label'>⬤ " + htmlEscape(label) + "</div>";
-  s += "<div class='gauge' style='--angle:" + String(angle) + "deg'>";
-  s += "<div class='needle' style='transform:rotate(" + String(angle) + "deg)'></div>";
+  s += "<div class='gauge'>";
+  s += "<div class='needle' style='transform:rotate(" + String(angle) + "deg) translateX(-50%);'></div>";
   s += "<div class='center'></div>";
   s += "</div>";
   s += "<div class='value' style='color:" + String(color) + "'>" + String(value, 1) + " " + htmlEscape(unit) + "</div>";
@@ -144,6 +144,9 @@ String buildPage() {
   String page;
   page += F("<!doctype html><html><head><meta charset='utf-8'>");
   page += F("<meta name='viewport' content='width=device-width,initial-scale=1'>");
+  page += F("<meta http-equiv='Cache-Control' content='no-cache, no-store, must-revalidate'>");
+  page += F("<meta http-equiv='Pragma' content='no-cache'>");
+  page += F("<meta http-equiv='Expires' content='0'>");
   page += F("<title>ESP32 Home Dashboard</title>");
   page += F("<style>");
   page += F(":root{color-scheme:dark}");
@@ -159,7 +162,7 @@ String buildPage() {
   page += F(".sub{margin-top:8px;text-align:center;opacity:.7;font-size:13px}");
   page += F(".gauge{position:relative;width:180px;height:90px;margin:0 auto;border-radius:180px 180px 0 0;background:conic-gradient(from 180deg,#22c55e 0 33%,#eab308 33% 66%,#ef4444 66% 100%);overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}");
   page += F(".gauge:after{content:'';position:absolute;left:18px;right:18px;bottom:0;height:72px;background:radial-gradient(circle at center,#0f172a,#030712);border-radius:180px 180px 0 0}");
-  page += F(".needle{position:absolute;left:50%;bottom:0;width:4px;height:78px;background:linear-gradient(180deg,#f8fafc,#38bdf8);transform-origin:bottom center;border-radius:99px;z-index:2;box-shadow:0 0 12px rgba(56,189,248,.55);transition:transform .7s cubic-bezier(.22,1,.36,1)}");
+  page += F(".needle{position:absolute;left:50%;bottom:0;width:4px;height:78px;background:linear-gradient(180deg,#f8fafc,#38bdf8);transform-origin:bottom center;border-radius:99px;z-index:2;box-shadow:0 0 12px rgba(56,189,248,.55);transition:transform 1.2s cubic-bezier(.22,1,.36,1);margin-left:-2px}");
   page += F(".card{animation:fadeUp .45s ease both}");
   page += F("@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}");
   page += F(".center{position:absolute;left:50%;bottom:-6px;width:18px;height:18px;background:#f8fafc;border-radius:50%;transform:translateX(-50%);z-index:3}");
@@ -176,57 +179,27 @@ String buildPage() {
   page += F(".live{opacity:.9}");
   page += F(".updated{animation:pulse .5s ease}");
   page += F("@keyframes pulse{0%{opacity:.6;transform:scale(.98)}100%{opacity:1;transform:scale(1)}}");
+  page += F(".card,.top,.summary,.status,.stats{will-change:transform,opacity}");
   page += F("</style><script>");
-  page += F("window.addEventListener('load',()=>{const m=document.querySelector('.meta');if(m)m.classList.add('updated');setInterval(()=>location.reload(),15000);});");
+  page += F("async function refreshData(){try{const r=await fetch('/data',{cache:'no-store'});const d=await r.json();const set=(sel,val)=>{const e=document.querySelector(sel);if(e)e.textContent=val;};set('#temp',d.temp.toFixed(1)+' °C');set('#humid',d.humid.toFixed(1)+' %');set('#press',d.press.toFixed(0)+' Pa');set('#lastMeasurement',d.lastMeasurement);set('#lastUpload',d.lastUpload);set('#nextUpload',d.nextUpload);set('#trend',d.trend);set('#wifi',d.wifi);set('#comfort',d.comfort);document.querySelectorAll('.gauge').forEach((g,i)=>{const a=[d.tempAngle,d.humidAngle,d.pressAngle][i];const n=g.querySelector('.needle');if(n)n.style.transform='rotate('+a+'deg) translateX(-50%)';});const m=document.querySelector('.meta');if(m)m.classList.add('updated');}catch(e){}}");
+  page += F("window.addEventListener('load',()=>{refreshData();setInterval(refreshData,15000);});");
   page += F("</script></head><body><div class='wrap'>");
   page += F("<div class='top'><div><h1>ESP32 Home Dashboard</h1><div class='meta'>Live BME280 data from your sensor</div></div>");
-  page += F("<div style='display:grid;gap:10px;justify-items:end'><div class='wifi'>");
-  page += (WiFi.status() == WL_CONNECTED) ? F("Wi-Fi: Connected") : F("Wi-Fi: Disconnected");
-  page += F("</div><div class='actions'><a class='btn primary' href='/measure'>Measure now</a><a class='btn ghost' href='/refresh'>Refresh</a></div></div></div>");
+  page += F("<div style='display:grid;gap:10px;justify-items:end'><div class='wifi' id='wifi'>Wi-Fi: ...</div><div class='actions'><a class='btn primary' href='/measure'>Measure now</a><a class='btn ghost' href='/refresh'>Refresh</a></div></div></div>");
   page += F("<div class='grid'>");
   page += gaugeHtml("Temperature", lastTemperature, -10, 50, "°C", tempColor(lastTemperature));
   page += gaugeHtml("Humidity", lastHumidity, 0, 100, "%", humidityColor(lastHumidity));
   page += gaugeHtml("Pressure", lastPressure, 95000, 105000, "Pa", pressureColor(lastPressure));
   page += F("</div>");
-  page += F("<div class='summary'>Comfort: ");
-  if (!isnan(lastTemperature) && !isnan(lastHumidity)) {
-    if (lastTemperature >= 20.0f && lastTemperature <= 26.0f && lastHumidity >= 40.0f && lastHumidity <= 60.0f) {
-      page += F("Good");
-    } else if (lastTemperature > 26.0f) {
-      page += F("Warm");
-    } else if (lastHumidity < 35.0f) {
-      page += F("Dry");
-    } else {
-      page += F("OK");
-    }
-  } else {
-    page += F("N/A");
-  }
-  page += F("</div>");
-  page += F("<div class='meta'>Trend: ");
-  if (!isnan(lastTemperature) && !isnan(minTemperature) && !isnan(maxTemperature)) {
-    if (lastTemperature >= maxTemperature) page += F("<span class='trend' style='color:#22c55e'>↑ warming</span>");
-    else if (lastTemperature <= minTemperature) page += F("<span class='trend' style='color:#38bdf8'>↓ cooling</span>");
-    else page += F("<span class='trend' style='color:#eab308'>→ steady</span>");
-  } else {
-    page += F("N/A");
-  }
-  page += F("</div>");
-  page += F("<div class='meta'>Last measurement: ");
-  page += ageText(lastMeasurementMs ? (millis() - lastMeasurementMs) : 0);
-  page += F("</div>");
+  page += F("<div class='summary'>Comfort: <span id='comfort'>N/A</span></div>");
+  page += F("<div class='meta'>Trend: <span id='trend'>N/A</span></div>");
+  page += F("<div class='meta'>Last measurement: <span id='lastMeasurement'>N/A</span></div>");
   page += F("<div class='status'>");
   page += F("<div class='pill'>Last upload: ");
-  page += lastUploadMs ? ageText(millis() - lastUploadMs) : String("never");
+  page += F("<span id='lastUpload'>never</span>");
   page += F("</div>");
   page += F("<div class='pill'>Next upload in: ");
-  if (lastUploadMs) {
-    unsigned long elapsed = millis() - lastUploadMs;
-    unsigned long remaining = elapsed >= measurementIntervalMs ? 0 : (measurementIntervalMs - elapsed);
-    page += countdownText(remaining);
-  } else {
-    page += countdownText(measurementIntervalMs);
-  }
+  page += F("<span id='nextUpload'>...</span>");
   page += F("</div>");
   page += F("</div>");
   page += F("<div class='stats'>");
@@ -260,6 +233,45 @@ void handleRefresh() {
   server.send(302, "text/plain", "Refreshed");
 }
 
+void handleData() {
+  String trend = "steady";
+  if (!isnan(lastTemperature) && !isnan(minTemperature) && !isnan(maxTemperature)) {
+    if (lastTemperature >= maxTemperature) trend = "warming";
+    else if (lastTemperature <= minTemperature) trend = "cooling";
+  }
+
+  String comfort = "N/A";
+  if (!isnan(lastTemperature) && !isnan(lastHumidity)) {
+    if (lastTemperature >= 20.0f && lastTemperature <= 26.0f && lastHumidity >= 40.0f && lastHumidity <= 60.0f) comfort = "Good";
+    else if (lastTemperature > 26.0f) comfort = "Warm";
+    else if (lastHumidity < 35.0f) comfort = "Dry";
+    else comfort = "OK";
+  }
+
+  unsigned long now = millis();
+  unsigned long lastMeasurementAgo = lastMeasurementMs ? (now - lastMeasurementMs) : 0;
+  String lastMeasurement = ageText(lastMeasurementAgo);
+  String lastUpload = lastUploadMs ? ageText(now - lastUploadMs) : String("never");
+  unsigned long remaining = lastUploadMs ? ((now - lastUploadMs) >= measurementIntervalMs ? 0 : (measurementIntervalMs - (now - lastUploadMs))) : measurementIntervalMs;
+  String nextUpload = countdownText(remaining);
+
+  String json = "{";
+  json += "\"temp\":" + String(lastTemperature, 1) + ",";
+  json += "\"humid\":" + String(lastHumidity, 1) + ",";
+  json += "\"press\":" + String(lastPressure, 0) + ",";
+  json += "\"tempAngle\":" + String((int)(-120 + constrain((lastTemperature + 10) / 60.0f, 0.0f, 1.0f) * 240)) + ",";
+  json += "\"humidAngle\":" + String((int)(-120 + constrain(lastHumidity / 100.0f, 0.0f, 1.0f) * 240)) + ",";
+  json += "\"pressAngle\":" + String((int)(-120 + constrain((lastPressure - 95000.0f) / 10000.0f, 0.0f, 1.0f) * 240) + 18) + ",";
+  json += "\"lastMeasurement\":\"" + lastMeasurement + "\",";
+  json += "\"lastUpload\":\"" + lastUpload + "\",";
+  json += "\"nextUpload\":\"" + nextUpload + "\",";
+  json += "\"trend\":\"" + trend + "\",";
+  json += "\"wifi\":\"" + String(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected") + "\",";
+  json += "\"comfort\":\"" + comfort + "\"";
+  json += "}";
+  server.send(200, "application/json", json);
+}
+
 void setup() {
   Serial.begin(115200);
   Wire.begin();
@@ -282,6 +294,7 @@ void setup() {
   server.on("/", handleRoot);
   server.on("/measure", handleMeasure);
   server.on("/refresh", handleRefresh);
+  server.on("/data", handleData);
   server.begin();
   Serial.println("HTTP server started");
 
