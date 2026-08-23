@@ -1,0 +1,229 @@
+:root { color-scheme: dark; }
+
+body {
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+  font-family: system-ui, Segoe UI, sans-serif;
+  color: #e5e7eb;
+}
+
+/* --- Collapsed hover bubble --- */
+
+.bubble {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 70px;
+  background: rgba(56, 189, 248, .35);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .2s ease;
+}
+
+body[data-edge="right"] .bubble { right: 0; border-radius: 8px 0 0 8px; }
+body[data-edge="left"] .bubble { left: 0; border-radius: 0 8px 8px 0; }
+
+.bubble:hover { background: rgba(56, 189, 248, .75); }
+
+.bubble-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f8fafc;
+}
+
+body.collapsed .bubble { display: flex; }
+body.expanded .bubble { display: none; }
+
+/* --- Expanded panel --- */
+
+.panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, .97), rgba(2, 6, 23, .97));
+  border: 1px solid rgba(148, 163, 184, .18);
+  padding: 16px;
+  box-sizing: border-box;
+  display: none;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+body.expanded .panel { display: flex; }
+body.collapsed .panel { display: none; }
+
+.panel-header {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.icon-btn {
+  background: rgba(31, 41, 55, .9);
+  border: 1px solid rgba(148, 163, 184, .15);
+  color: #e5e7eb;
+  border-radius: 8px;
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.icon-btn:hover { background: rgba(56, 189, 248, .25); }
+.icon-btn.quit:hover { background: #ef4444; color: #fff; }
+
+.view.hidden { display: none; }
+
+.gauge-card {
+  background: rgba(15, 23, 42, .6);
+  border: 1px solid rgba(148, 163, 184, .15);
+  border-radius: 16px;
+  padding: 14px;
+  text-align: center;
+}
+
+.label {
+  font-size: 11px;
+  opacity: .75;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: 8px;
+}
+
+.gauge {
+  position: relative;
+  width: 120px;
+  height: 60px;
+  margin: 0 auto;
+  border-radius: 120px 120px 0 0;
+  background: conic-gradient(from 180deg, #22c55e 0 33%, #eab308 33% 66%, #ef4444 66% 100%);
+  overflow: hidden;
+}
+
+.gauge:after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 48px;
+  background: radial-gradient(circle at center, #0f172a, #030712);
+  border-radius: 120px 120px 0 0;
+}
+
+.needle {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 3px;
+  height: 52px;
+  background: linear-gradient(180deg, #f8fafc, #38bdf8);
+  transform-origin: bottom center;
+  border-radius: 99px;
+  z-index: 2;
+  transition: transform 1s ease;
+}
+
+.center {
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 12px;
+  height: 12px;
+  background: #f8fafc;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+
+.value {
+  font-size: 18px;
+  font-weight: 800;
+  margin-top: 10px;
+}
+
+.extra-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  opacity: .8;
+}
+
+.extra-info .pill {
+  background: rgba(56, 189, 248, .14);
+  border: 1px solid rgba(56, 189, 248, .25);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+
+.status-line {
+  font-size: 11px;
+  opacity: .6;
+  text-align: center;
+}
+
+/* --- Settings view --- */
+
+#settingsView h2 {
+  font-size: 15px;
+  margin: 0 0 6px;
+}
+
+#settingsView label {
+  font-size: 12px;
+  opacity: .8;
+  display: block;
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+#settingsView input[type="text"],
+#settingsView input[type="number"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, .25);
+  background: rgba(2, 6, 23, .6);
+  color: #e5e7eb;
+  font-size: 13px;
+}
+
+.radio-row, .checkbox-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.save-btn, .back-btn {
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.save-btn {
+  background: linear-gradient(135deg, #38bdf8, #2563eb);
+  color: #eff6ff;
+}
+
+.back-btn {
+  background: rgba(31, 41, 55, .9);
+  color: #e5e7eb;
+  border: 1px solid rgba(148, 163, 184, .15);
+}

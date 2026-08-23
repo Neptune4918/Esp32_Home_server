@@ -1,0 +1,84 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ESP32 Widget</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body class="collapsed" data-edge="right">
+
+  <div id="bubble" class="bubble">
+    <div class="bubble-dot"></div>
+  </div>
+
+  <div id="panel" class="panel">
+    <div class="panel-header">
+      <button id="settingsBtn" class="icon-btn" title="Settings">⚙</button>
+      <button id="collapseBtn" class="icon-btn" title="Hide">»</button>
+      <button id="quitBtn" class="icon-btn quit" title="Quit">✕</button>
+    </div>
+
+    <div id="dashboardView" class="view">
+      <div class="gauge-card">
+        <div class="label">Temperature</div>
+        <div class="gauge">
+          <div class="needle" id="needle-temp"></div>
+          <div class="center"></div>
+        </div>
+        <div class="value" id="temp">-- °C</div>
+      </div>
+
+      <div class="gauge-card">
+        <div class="label">Humidity</div>
+        <div class="gauge">
+          <div class="needle" id="needle-humid"></div>
+          <div class="center"></div>
+        </div>
+        <div class="value" id="humid">-- %</div>
+      </div>
+
+      <div class="gauge-card">
+        <div class="label">Pressure</div>
+        <div class="gauge">
+          <div class="needle" id="needle-press"></div>
+          <div class="center"></div>
+        </div>
+        <div class="value" id="press">-- kPa</div>
+      </div>
+
+      <div id="extraInfo" class="extra-info"></div>
+
+      <div class="status-line" id="statusLine">Connecting...</div>
+    </div>
+
+    <div id="settingsView" class="view hidden">
+      <h2>Settings</h2>
+
+      <label for="address">ESP32 address</label>
+      <input id="address" type="text" placeholder="esp32-home.local or 192.168.1.50" />
+
+      <label>Screen edge</label>
+      <div class="radio-row">
+        <label><input type="radio" name="edge" value="left" /> Left</label>
+        <label><input type="radio" name="edge" value="right" /> Right</label>
+      </div>
+
+      <label for="autoHideDelay">Auto-hide delay (seconds)</label>
+      <input id="autoHideDelay" type="number" min="1" max="60" />
+
+      <label>Extra info blocks</label>
+      <div class="checkbox-row">
+        <label><input type="checkbox" id="widgetComfort" /> Comfort</label>
+        <label><input type="checkbox" id="widgetTrend" /> Trend</label>
+        <label><input type="checkbox" id="widgetWifi" /> Wi-Fi status</label>
+        <label><input type="checkbox" id="widgetLastUpload" /> Last upload</label>
+      </div>
+
+      <button id="saveSettingsBtn" class="save-btn">Save</button>
+      <button id="backBtn" class="back-btn">Back</button>
+    </div>
+  </div>
+
+  <script src="panel.js"></script>
+</body>
+</html>
