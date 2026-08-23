@@ -85,3 +85,20 @@ npm run release
 Ако не зададеш `GH_TOKEN`, `npm run release` ще гръмне с грешка при
 опит за качване. `npm run dist` (без `--publish`) винаги работи
 локално, без токен — просто няма да публикува нищо.
+
+### Важно: repo-то трябва да е public
+
+`electron-updater` (auto-update механизмът) сваля инсталатора през
+публичен URL — той не носи никакъв token в себе си. Ако repo-то е
+**private**, изтеглянето ще гърми и никой инсталиран екземпляр няма
+да види новите версии. Затова repo-то е направено public (в кода
+няма тайни — `secrets.h` винаги е бил в `.gitignore`).
+
+### Важно: новите release-и излизат като "draft"
+
+`electron-builder`-ският GitHub publisher по подразбиране създава
+release-а като **draft** (чернова, не се вижда публично, auto-update
+feed-ът го игнорира). След `npm run release` трябва да отидеш на
+https://github.com/Neptune4918/Esp32_Home_server/releases, да
+намериш новия draft release и да натиснеш **"Publish release"** —
+едва тогава инсталираните копия ще го открият.
