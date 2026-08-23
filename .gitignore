@@ -7,3 +7,4 @@ Desktop.ini
 firmware/**/secrets.h
 desktop/node_modules/
 desktop/config.json
+desktop/dist/

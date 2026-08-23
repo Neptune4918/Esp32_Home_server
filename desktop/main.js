@@ -1,7 +1,8 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, screen, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const { autoUpdater } = require('electron-updater');
 
 const configPath = path.join(app.getPath('userData'), 'config.json');
 
@@ -216,18 +217,71 @@ function createPanelWindow() {
 function createTray() {
   tray = new Tray(path.join(__dirname, 'assets', 'tray-icon.ico'));
   tray.setToolTip('ESP32 Home Dashboard');
-
-  const menu = Menu.buildFromTemplate([
-    { label: 'Show panel', click: () => expandPanel() },
-    { label: 'Hide panel', click: () => collapsePanel() },
-    { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() },
-  ]);
-  tray.setContextMenu(menu);
+  buildTrayMenu();
   tray.on('click', () => {
     if (expanded) collapsePanel();
     else expandPanel();
   });
+}
+
+// Rebuilt whenever update state changes so the "Restart to update" item can
+// appear/disappear without recreating the Tray itself.
+function buildTrayMenu() {
+  if (!tray) return;
+  const items = [
+    { label: 'Show panel', click: () => expandPanel() },
+    { label: 'Hide panel', click: () => collapsePanel() },
+    { type: 'separator' },
+  ];
+  if (updateReady) {
+    items.push(
+      { label: 'Restart to install update', click: () => autoUpdater.quitAndInstall() },
+      { type: 'separator' },
+    );
+  }
+  items.push({ label: 'Quit', click: () => app.quit() });
+  tray.setContextMenu(Menu.buildFromTemplate(items));
+}
+
+// --- Auto-update ---
+// Updates are published as GitHub Releases (see package.json "build.publish"
+// and "npm run release"). electron-updater checks that feed, downloads a new
+// installer in the background if one is newer, and we let the user pick when
+// to actually restart (via the tray menu) rather than forcing a restart.
+let updateReady = false;
+
+function setupAutoUpdates() {
+  // Skip entirely in dev mode (`npm start`): there's no packaged installer
+  // to update, and checkForUpdates() would just log a harmless but noisy
+  // "not packaged" error.
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true; // installs silently on next quit even if not clicked
+
+  autoUpdater.on('update-downloaded', (info) => {
+    updateReady = true;
+    buildTrayMenu();
+    if (Notification.isSupported()) {
+      new Notification({
+        title: 'ESP32 Home Dashboard update ready',
+        body: `Version ${info.version} downloaded. Right-click the tray icon to restart and install, or it will install next time you quit.`,
+      }).show();
+    }
+  });
+
+  autoUpdater.on('error', (err) => {
+    // Non-fatal: the app keeps running on the current version. Logged only
+    // for troubleshooting (e.g. via the "npm start" console) — never shown
+    // to the user, since a failed background update check shouldn't be
+    // alarming.
+    console.error('[auto-update] error:', err == null ? err : err.message || err);
+  });
+
+  autoUpdater.checkForUpdates();
+  // Also re-check periodically since this is a long-running tray app that
+  // may stay open for days without a restart.
+  setInterval(() => autoUpdater.checkForUpdates(), 6 * 60 * 60 * 1000); // every 6h
 }
 
 ipcMain.on('panel:expand', () => expandPanel());
@@ -255,6 +309,7 @@ app.whenReady().then(() => {
   createPanelWindow();
   createTray();
   startPolling();
+  setupAutoUpdates();
 });
 
 app.on('window-all-closed', () => {
