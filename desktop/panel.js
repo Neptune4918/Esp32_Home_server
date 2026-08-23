@@ -10,6 +10,7 @@ const settingsView = document.getElementById('settingsView');
 const settingsBtn = document.getElementById('settingsBtn');
 const collapseBtn = document.getElementById('collapseBtn');
 const quitBtn = document.getElementById('quitBtn');
+const measureNowBtn = document.getElementById('measureNowBtn');
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 const backBtn = document.getElementById('backBtn');
 
@@ -96,6 +97,12 @@ quitBtn.addEventListener('click', () => window.panelAPI.quit());
 settingsBtn.addEventListener('click', showSettingsView);
 backBtn.addEventListener('click', showDashboardView);
 
+measureNowBtn.addEventListener('click', () => {
+  measureNowBtn.disabled = true;
+  measureNowBtn.textContent = 'Measuring...';
+  window.panelAPI.measureNow();
+});
+
 panel.addEventListener('mouseenter', cancelAutoHide);
 panel.addEventListener('mouseleave', scheduleAutoHide);
 
@@ -132,10 +139,14 @@ window.panelAPI.onState((state) => {
 
 window.panelAPI.onDataUpdate((data) => {
   renderData(data);
+  measureNowBtn.disabled = false;
+  measureNowBtn.textContent = 'Measure now';
 });
 
 window.panelAPI.onDataError((message) => {
   document.getElementById('statusLine').textContent = `Connection error: ${message}`;
+  measureNowBtn.disabled = false;
+  measureNowBtn.textContent = 'Measure now';
 });
 
 window.panelAPI.getConfig().then((cfg) => {

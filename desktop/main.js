@@ -7,13 +7,14 @@ const configPath = path.join(app.getPath('userData'), 'config.json');
 
 // Windows enforces a minimum top-level window width/height (SM_CXMIN/SM_CYMIN)
 // even for frameless BrowserWindows, which in testing on this machine clamped
-// anything smaller than ~64px back up to 64px. Using a value at/above that
-// floor keeps the window fully on-screen (otherwise the extra forced width
-// spills past the screen edge and the visible bubble ends up mis-anchored).
-const HOTZONE_SIZE = 64;   // px width of the thin hover strip when collapsed
+// anything smaller than ~64px back up to 64px. HOTZONE_SIZE is picked above
+// that floor anyway since the user wants a visibly bigger/wider bubble.
+const HOTZONE_SIZE = 90;   // px width of the hover strip when collapsed
 const PANEL_WIDTH = 300;   // px width of the fully expanded panel
-const ANIMATION_MS = 220;
-const ANIMATION_STEPS = 12;
+const PANEL_GAP = 10;      // px gap between the floating panel and the true screen edge
+const VERTICAL_SPAN = 0.5; // bubble/panel occupy the middle 50% of the screen height (25%-75%)
+const ANIMATION_MS = 320;
+const ANIMATION_FRAME_MS = 16; // ~60fps steps
 
 const defaultConfig = {
   address: 'esp32-home.local',
@@ -56,45 +57,61 @@ function getDisplayWorkArea() {
   return screen.getPrimaryDisplay().workArea;
 }
 
-function boundsFor(widthPx) {
+// widthPx: current window width. gapPx: distance between the window's outer
+// edge and the true screen edge (0 when collapsed/flush, PANEL_GAP when the
+// panel is floating). Both bubble and panel share the same 25%-75% vertical
+// span of the screen.
+function boundsFor(widthPx, gapPx) {
   const wa = getDisplayWorkArea();
-  const x = config.edge === 'left' ? wa.x : wa.x + wa.width - widthPx;
-  return { x, y: wa.y, width: widthPx, height: wa.height };
+  const height = Math.round(wa.height * VERTICAL_SPAN);
+  const y = wa.y + Math.round((wa.height - height) / 2);
+  const gap = gapPx || 0;
+  const x = config.edge === 'left'
+    ? wa.x + gap
+    : wa.x + wa.width - widthPx - gap;
+  return { x, y, width: widthPx, height };
 }
 
-function animateTo(targetWidth, onDone) {
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function animateTo(targetWidth, targetGap, onDone) {
   if (!panelWindow) return;
   animating = true;
-  const start = panelWindow.getBounds().width;
-  const delta = targetWidth - start;
+  const startBounds = panelWindow.getBounds();
+  const startWidth = startBounds.width;
+  const startGap = expanded ? PANEL_GAP : 0; // gap state we're animating away from
+  const totalSteps = Math.max(1, Math.round(ANIMATION_MS / ANIMATION_FRAME_MS));
   let step = 0;
 
   const timer = setInterval(() => {
     step += 1;
-    const progress = step / ANIMATION_STEPS;
-    const width = Math.round(start + delta * progress);
-    panelWindow.setBounds(boundsFor(width));
+    const progress = easeOutCubic(Math.min(1, step / totalSteps));
+    const width = Math.round(startWidth + (targetWidth - startWidth) * progress);
+    const gap = startGap + (targetGap - startGap) * progress;
+    panelWindow.setBounds(boundsFor(width, gap));
 
-    if (step >= ANIMATION_STEPS) {
+    if (step >= totalSteps) {
       clearInterval(timer);
-      panelWindow.setBounds(boundsFor(targetWidth));
+      panelWindow.setBounds(boundsFor(targetWidth, targetGap));
       animating = false;
       if (onDone) onDone();
     }
-  }, ANIMATION_MS / ANIMATION_STEPS);
+  }, ANIMATION_FRAME_MS);
 }
 
 function expandPanel() {
   if (expanded || animating) return;
   expanded = true;
   panelWindow.webContents.send('panel:state', 'expanded');
-  animateTo(PANEL_WIDTH);
+  animateTo(PANEL_WIDTH, PANEL_GAP);
 }
 
 function collapsePanel() {
   if (!expanded || animating) return;
   expanded = false;
-  animateTo(HOTZONE_SIZE, () => {
+  animateTo(HOTZONE_SIZE, 0, () => {
     panelWindow.webContents.send('panel:state', 'collapsed');
   });
 }
@@ -102,13 +119,18 @@ function collapsePanel() {
 function repositionForEdgeChange() {
   if (!panelWindow) return;
   const width = expanded ? PANEL_WIDTH : HOTZONE_SIZE;
-  panelWindow.setBounds(boundsFor(width));
+  const gap = expanded ? PANEL_GAP : 0;
+  panelWindow.setBounds(boundsFor(width, gap));
+}
+
+function buildUrl(address, routePath) {
+  const base = /^https?:\/\//i.test(address) ? address : 'http://' + address;
+  return base + routePath;
 }
 
 function fetchDashboardData(address) {
   return new Promise((resolve, reject) => {
-    const url = /^https?:\/\//i.test(address) ? address + '/data' : 'http://' + address + '/data';
-    const req = http.get(url, { timeout: 5000 }, (res) => {
+    const req = http.get(buildUrl(address, '/data'), { timeout: 5000 }, (res) => {
       let body = '';
       res.on('data', (chunk) => (body += chunk));
       res.on('end', () => {
@@ -118,6 +140,21 @@ function fetchDashboardData(address) {
           reject(e);
         }
       });
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+  });
+}
+
+function triggerMeasure(address) {
+  return new Promise((resolve, reject) => {
+    // /measure does a local-only BME280 read on the ESP32 (no ThingSpeak
+    // upload) and replies with a redirect, same as the web dashboard's
+    // "Measure now" button. We just need the read to happen, then we
+    // re-poll /data to pick up the fresh values.
+    const req = http.get(buildUrl(address, '/measure'), { timeout: 5000 }, (res) => {
+      res.resume(); // drain response
+      res.on('end', resolve);
     });
     req.on('timeout', () => req.destroy(new Error('timeout')));
     req.on('error', reject);
@@ -134,6 +171,14 @@ function pollData() {
     });
 }
 
+function measureNow() {
+  triggerMeasure(config.address)
+    .then(() => pollData())
+    .catch((err) => {
+      if (panelWindow) panelWindow.webContents.send('data:error', String(err.message || err));
+    });
+}
+
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
   pollData();
@@ -141,11 +186,12 @@ function startPolling() {
 }
 
 function createPanelWindow() {
+  const initial = boundsFor(HOTZONE_SIZE, 0);
   panelWindow = new BrowserWindow({
-    width: HOTZONE_SIZE,
-    height: getDisplayWorkArea().height,
-    x: boundsFor(HOTZONE_SIZE).x,
-    y: boundsFor(HOTZONE_SIZE).y,
+    width: initial.width,
+    height: initial.height,
+    x: initial.x,
+    y: initial.y,
     frame: false,
     transparent: true,
     hasShadow: false,
@@ -189,6 +235,7 @@ function createTray() {
 ipcMain.on('panel:expand', () => expandPanel());
 ipcMain.on('panel:collapse', () => collapsePanel());
 ipcMain.on('panel:quit', () => app.quit());
+ipcMain.on('panel:measureNow', () => measureNow());
 
 ipcMain.handle('config:get', () => config);
 

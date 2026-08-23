@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('panelAPI', {
   expand: () => ipcRenderer.send('panel:expand'),
   collapse: () => ipcRenderer.send('panel:collapse'),
   quit: () => ipcRenderer.send('panel:quit'),
+  measureNow: () => ipcRenderer.send('panel:measureNow'),
   getConfig: () => ipcRenderer.invoke('config:get'),
   saveConfig: (config) => ipcRenderer.invoke('config:save', config),
   onState: (callback) => ipcRenderer.on('panel:state', (_event, state) => callback(state)),

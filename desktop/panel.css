@@ -14,22 +14,37 @@ body {
 
 .bubble {
   position: fixed;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 14px;
-  height: 70px;
-  background: rgba(56, 189, 248, .35);
+  inset: 0;
   display: none;
-  align-items: center;
-  justify-content: center;
   cursor: pointer;
-  transition: background .2s ease;
 }
 
-body[data-edge="right"] .bubble { right: 0; border-radius: 8px 0 0 8px; }
-body[data-edge="left"] .bubble { left: 0; border-radius: 0 8px 8px 0; }
+body.collapsed .bubble { display: block; }
+body.expanded .bubble { display: none; }
 
-.bubble:hover { background: rgba(56, 189, 248, .75); }
+/* Fully transparent/invisible at rest; the gradient only fades in on hover
+   so the bubble never visually intrudes on the desktop otherwise. */
+.bubble-glow {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .25s ease;
+}
+
+body[data-edge="right"] .bubble-glow {
+  background: linear-gradient(to left, rgba(56, 189, 248, .85), rgba(56, 189, 248, 0));
+  border-radius: 18px 0 0 18px;
+}
+
+body[data-edge="left"] .bubble-glow {
+  background: linear-gradient(to right, rgba(56, 189, 248, .85), rgba(56, 189, 248, 0));
+  border-radius: 0 18px 18px 0;
+}
+
+.bubble:hover .bubble-glow { opacity: 1; }
 
 .bubble-dot {
   width: 6px;
@@ -37,9 +52,6 @@ body[data-edge="left"] .bubble { left: 0; border-radius: 0 8px 8px 0; }
   border-radius: 50%;
   background: #f8fafc;
 }
-
-body.collapsed .bubble { display: flex; }
-body.expanded .bubble { display: none; }
 
 /* --- Expanded panel --- */
 
@@ -51,6 +63,8 @@ body.expanded .bubble { display: none; }
   bottom: 0;
   background: linear-gradient(180deg, rgba(15, 23, 42, .97), rgba(2, 6, 23, .97));
   border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 20px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .55), 0 0 0 1px rgba(148, 163, 184, .08);
   padding: 16px;
   box-sizing: border-box;
   display: none;
@@ -172,6 +186,23 @@ body.collapsed .panel { display: none; }
   opacity: .6;
   text-align: center;
 }
+
+.measure-btn {
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  background: linear-gradient(135deg, #38bdf8, #2563eb);
+  color: #eff6ff;
+  transition: filter .15s ease, transform .1s ease;
+}
+
+.measure-btn:hover { filter: brightness(1.1); }
+.measure-btn:active { transform: scale(.97); }
+.measure-btn:disabled { opacity: .6; cursor: default; filter: none; }
 
 /* --- Settings view --- */
 
