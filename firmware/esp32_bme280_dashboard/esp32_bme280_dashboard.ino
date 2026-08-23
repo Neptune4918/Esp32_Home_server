@@ -17,7 +17,14 @@ WebServer server(80);
 float lastTemperature = NAN;
 float lastHumidity = NAN;
 float lastPressure = NAN;
+float minTemperature = NAN;
+float maxTemperature = NAN;
+float minHumidity = NAN;
+float maxHumidity = NAN;
+float minPressure = NAN;
+float maxPressure = NAN;
 unsigned long lastMeasurementMs = 0;
+unsigned long lastUploadMs = 0;
 const unsigned long measurementIntervalMs = 60UL * 60UL * 1000UL;
 
 String htmlEscape(const String& s) {
@@ -39,6 +46,13 @@ void readBme280() {
   lastHumidity = bme.readHumidity();
   lastPressure = bme.readPressure();
   lastMeasurementMs = millis();
+  if (isnan(minTemperature) || lastTemperature < minTemperature) minTemperature = lastTemperature;
+  if (isnan(maxTemperature) || lastTemperature > maxTemperature) maxTemperature = lastTemperature;
+  if (isnan(minHumidity) || lastHumidity < minHumidity) minHumidity = lastHumidity;
+  if (isnan(maxHumidity) || lastHumidity > maxHumidity) maxHumidity = lastHumidity;
+  if (isnan(minPressure) || lastPressure < minPressure) minPressure = lastPressure;
+  if (isnan(maxPressure) || lastPressure > maxPressure) maxPressure = lastPressure;
+  Serial.printf("Sensor read -> T: %.2f C, H: %.2f %%, P: %.0f Pa\n", lastTemperature, lastHumidity, lastPressure);
 }
 
 void sendToThingSpeak(float t, float h, float p) {
@@ -55,10 +69,14 @@ void sendToThingSpeak(float t, float h, float p) {
              + "&field3=" + String(h, 2);
 
   http.begin(url);
+  Serial.println("ThingSpeak upload started");
   int code = http.GET();
   String payload = http.getString();
   Serial.printf("ThingSpeak HTTP %d, response: %s\n", code, payload.c_str());
   http.end();
+  if (code > 0) {
+    lastUploadMs = millis();
+  }
 }
 
 String gaugeHtml(const char* label, float value, float minValue, float maxValue, const char* unit, const char* color) {
@@ -69,9 +87,9 @@ String gaugeHtml(const char* label, float value, float minValue, float maxValue,
 
   String s;
   s += "<div class='card'>";
-  s += "<div class='label'>" + htmlEscape(label) + "</div>";
-  s += "<div class='gauge' data-angle='" + String(angle) + "'>";
-  s += "<div class='needle'></div>";
+  s += "<div class='label'>⬤ " + htmlEscape(label) + "</div>";
+  s += "<div class='gauge' style='--angle:" + String(angle) + "deg'>";
+  s += "<div class='needle' style='transform:rotate(" + String(angle) + "deg)'></div>";
   s += "<div class='center'></div>";
   s += "</div>";
   s += "<div class='value' style='color:" + String(color) + "'>" + String(value, 1) + " " + htmlEscape(unit) + "</div>";
@@ -88,11 +106,44 @@ String ageText(unsigned long msAgo) {
   return String(hours) + " h ago";
 }
 
+String countdownText(unsigned long msUntil) {
+  unsigned long seconds = msUntil / 1000UL;
+  if (seconds < 60) return String(seconds) + " s";
+  unsigned long minutes = seconds / 60UL;
+  if (minutes < 60) return String(minutes) + " min";
+  unsigned long hours = minutes / 60UL;
+  return String(hours) + " h";
+}
+
+String statLine(const char* label, float minValue, float maxValue, const char* unit) {
+  return String(label) + ": " + String(minValue, 1) + " / " + String(maxValue, 1) + " " + unit;
+}
+
+const char* tempColor(float t) {
+  if (isnan(t)) return "#cbd5e1";
+  if (t < 18.0f) return "#38bdf8";
+  if (t < 26.0f) return "#22c55e";
+  return "#f59e0b";
+}
+
+const char* humidityColor(float h) {
+  if (isnan(h)) return "#cbd5e1";
+  if (h < 35.0f) return "#f59e0b";
+  if (h > 70.0f) return "#38bdf8";
+  return "#22c55e";
+}
+
+const char* pressureColor(float p) {
+  if (isnan(p)) return "#cbd5e1";
+  if (p < 99000.0f) return "#f59e0b";
+  if (p > 103000.0f) return "#38bdf8";
+  return "#22c55e";
+}
+
 String buildPage() {
   String page;
   page += F("<!doctype html><html><head><meta charset='utf-8'>");
   page += F("<meta name='viewport' content='width=device-width,initial-scale=1'>");
-  page += F("<meta http-equiv='refresh' content='15'>");
   page += F("<title>ESP32 Home Dashboard</title>");
   page += F("<style>");
   page += F(":root{color-scheme:dark}");
@@ -100,14 +151,15 @@ String buildPage() {
   page += F(".wrap{max-width:1000px;margin:0 auto;padding:24px}");
   page += F(".top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.16);border-radius:24px;padding:20px 22px;backdrop-filter:blur(10px)}");
   page += F(".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-top:24px}");
+  page += F(".wifi{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(59,130,246,.14);border:1px solid rgba(59,130,246,.25);font-size:13px;font-weight:700}");
+  page += F(".trend{font-weight:800}");
   page += F(".card{background:linear-gradient(180deg,rgba(15,23,42,.95),rgba(15,23,42,.72));border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:20px;box-shadow:0 16px 50px rgba(0,0,0,.35)}");
   page += F(".label{font-size:13px;opacity:.8;margin-bottom:14px;letter-spacing:.08em;text-transform:uppercase}");
   page += F(".value{font-size:30px;font-weight:800;margin-top:14px;text-align:center;letter-spacing:.01em}");
   page += F(".sub{margin-top:8px;text-align:center;opacity:.7;font-size:13px}");
   page += F(".gauge{position:relative;width:180px;height:90px;margin:0 auto;border-radius:180px 180px 0 0;background:conic-gradient(from 180deg,#22c55e 0 33%,#eab308 33% 66%,#ef4444 66% 100%);overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}");
   page += F(".gauge:after{content:'';position:absolute;left:18px;right:18px;bottom:0;height:72px;background:radial-gradient(circle at center,#0f172a,#030712);border-radius:180px 180px 0 0}");
-  page += F(".needle{position:absolute;left:50%;bottom:0;width:4px;height:78px;background:linear-gradient(180deg,#f8fafc,#38bdf8);transform-origin:bottom center;border-radius:99px;z-index:2;box-shadow:0 0 12px rgba(56,189,248,.55)}");
-  page += F(".gauge[data-angle] .needle{transform:rotate(var(--angle,0deg));transition:transform .7s cubic-bezier(.22,1,.36,1)}");
+  page += F(".needle{position:absolute;left:50%;bottom:0;width:4px;height:78px;background:linear-gradient(180deg,#f8fafc,#38bdf8);transform-origin:bottom center;border-radius:99px;z-index:2;box-shadow:0 0 12px rgba(56,189,248,.55);transition:transform .7s cubic-bezier(.22,1,.36,1)}");
   page += F(".card{animation:fadeUp .45s ease both}");
   page += F("@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}");
   page += F(".center{position:absolute;left:50%;bottom:-6px;width:18px;height:18px;background:#f8fafc;border-radius:50%;transform:translateX(-50%);z-index:3}");
@@ -117,26 +169,74 @@ String buildPage() {
   page += F(".primary{background:linear-gradient(135deg,#38bdf8,#2563eb);color:#eff6ff;box-shadow:0 8px 24px rgba(37,99,235,.32)}");
   page += F(".ghost{background:rgba(31,41,55,.9);color:#e5e7eb;border:1px solid rgba(148,163,184,.15)}");
   page += F(".meta{margin-top:14px;opacity:.72;font-size:14px}");
+  page += F(".summary{margin-top:14px;padding:14px 16px;border-radius:16px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.22);font-weight:700}");
+  page += F(".status{margin-top:10px;display:grid;gap:8px}");
+  page += F(".stats{margin-top:14px;display:grid;gap:8px;font-size:13px;opacity:.78}");
+  page += F(".pill{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(56,189,248,.14);border:1px solid rgba(56,189,248,.25);font-size:12px;letter-spacing:.02em}");
+  page += F(".live{opacity:.9}");
   page += F(".updated{animation:pulse .5s ease}");
   page += F("@keyframes pulse{0%{opacity:.6;transform:scale(.98)}100%{opacity:1;transform:scale(1)}}");
-  page += F(".gauge{--angle:0deg}");
-  page += F(".gauge[data-angle='");
-  page += String(-120);
-  page += F("']{--angle:");
-  page += String(-120);
-  page += F("deg}");
   page += F("</style><script>");
-  page += F("window.addEventListener('load',()=>{document.querySelectorAll('.gauge').forEach(g=>{const a=g.dataset.angle||0;g.style.setProperty('--angle',a+'deg');});const m=document.querySelector('.meta');if(m)m.classList.add('updated');});");
+  page += F("window.addEventListener('load',()=>{const m=document.querySelector('.meta');if(m)m.classList.add('updated');setInterval(()=>location.reload(),15000);});");
   page += F("</script></head><body><div class='wrap'>");
   page += F("<div class='top'><div><h1>ESP32 Home Dashboard</h1><div class='meta'>Live BME280 data from your sensor</div></div>");
-  page += F("<div class='actions'><a class='btn primary' href='/measure'>Measure now</a><a class='btn ghost' href='/refresh'>Refresh</a></div></div>");
+  page += F("<div style='display:grid;gap:10px;justify-items:end'><div class='wifi'>");
+  page += (WiFi.status() == WL_CONNECTED) ? F("Wi-Fi: Connected") : F("Wi-Fi: Disconnected");
+  page += F("</div><div class='actions'><a class='btn primary' href='/measure'>Measure now</a><a class='btn ghost' href='/refresh'>Refresh</a></div></div></div>");
   page += F("<div class='grid'>");
-  page += gaugeHtml("Temperature", lastTemperature, -10, 50, "°C", "#38bdf8");
-  page += gaugeHtml("Humidity", lastHumidity, 0, 100, "%", "#22c55e");
-  page += gaugeHtml("Pressure", lastPressure, 95000, 105000, "Pa", "#f59e0b");
+  page += gaugeHtml("Temperature", lastTemperature, -10, 50, "°C", tempColor(lastTemperature));
+  page += gaugeHtml("Humidity", lastHumidity, 0, 100, "%", humidityColor(lastHumidity));
+  page += gaugeHtml("Pressure", lastPressure, 95000, 105000, "Pa", pressureColor(lastPressure));
+  page += F("</div>");
+  page += F("<div class='summary'>Comfort: ");
+  if (!isnan(lastTemperature) && !isnan(lastHumidity)) {
+    if (lastTemperature >= 20.0f && lastTemperature <= 26.0f && lastHumidity >= 40.0f && lastHumidity <= 60.0f) {
+      page += F("Good");
+    } else if (lastTemperature > 26.0f) {
+      page += F("Warm");
+    } else if (lastHumidity < 35.0f) {
+      page += F("Dry");
+    } else {
+      page += F("OK");
+    }
+  } else {
+    page += F("N/A");
+  }
+  page += F("</div>");
+  page += F("<div class='meta'>Trend: ");
+  if (!isnan(lastTemperature) && !isnan(minTemperature) && !isnan(maxTemperature)) {
+    if (lastTemperature >= maxTemperature) page += F("<span class='trend' style='color:#22c55e'>↑ warming</span>");
+    else if (lastTemperature <= minTemperature) page += F("<span class='trend' style='color:#38bdf8'>↓ cooling</span>");
+    else page += F("<span class='trend' style='color:#eab308'>→ steady</span>");
+  } else {
+    page += F("N/A");
+  }
   page += F("</div>");
   page += F("<div class='meta'>Last measurement: ");
   page += ageText(lastMeasurementMs ? (millis() - lastMeasurementMs) : 0);
+  page += F("</div>");
+  page += F("<div class='status'>");
+  page += F("<div class='pill'>Last upload: ");
+  page += lastUploadMs ? ageText(millis() - lastUploadMs) : String("never");
+  page += F("</div>");
+  page += F("<div class='pill'>Next upload in: ");
+  if (lastUploadMs) {
+    unsigned long elapsed = millis() - lastUploadMs;
+    unsigned long remaining = elapsed >= measurementIntervalMs ? 0 : (measurementIntervalMs - elapsed);
+    page += countdownText(remaining);
+  } else {
+    page += countdownText(measurementIntervalMs);
+  }
+  page += F("</div>");
+  page += F("</div>");
+  page += F("<div class='stats'>");
+  page += F("<div class='pill'>");
+  page += statLine("Temp min/max", minTemperature, maxTemperature, "°C");
+  page += F("</div><div class='pill'>");
+  page += statLine("Humidity min/max", minHumidity, maxHumidity, "%");
+  page += F("</div><div class='pill'>");
+  page += statLine("Pressure min/max", minPressure, maxPressure, "Pa");
+  page += F("</div>");
   page += F("</div>");
   page += F("</div></body></html>");
   return page;
@@ -148,12 +248,14 @@ void handleRoot() {
 
 void handleMeasure() {
   readBme280();
+  Serial.println("Measure now pressed -> local refresh only");
   server.sendHeader("Location", "/");
   server.send(302, "text/plain", "Measured");
 }
 
 void handleRefresh() {
   readBme280();
+  Serial.println("Manual refresh pressed");
   server.sendHeader("Location", "/");
   server.send(302, "text/plain", "Refreshed");
 }
@@ -175,11 +277,13 @@ void setup() {
   }
 
   readBme280();
+  sendToThingSpeak(lastTemperature, lastHumidity, lastPressure);
 
   server.on("/", handleRoot);
   server.on("/measure", handleMeasure);
   server.on("/refresh", handleRefresh);
   server.begin();
+  Serial.println("HTTP server started");
 
   Serial.println();
   Serial.print("Open: http://");
