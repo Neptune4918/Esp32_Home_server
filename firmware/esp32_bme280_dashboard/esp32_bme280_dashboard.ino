@@ -83,13 +83,17 @@ String gaugeHtml(const char* label, float value, float minValue, float maxValue,
   float ratio = (value - minValue) / (maxValue - minValue);
   if (ratio < 0) ratio = 0;
   if (ratio > 1) ratio = 1;
-  int angle = (int)(-120 + ratio * 240);
+  int angle = (int)(-90 + ratio * 180);
+  int displayAngle = angle;
+  if (strstr(label, "Pressure") != nullptr) {
+    displayAngle = -75 + (int)(ratio * 150);
+  }
 
   String s;
   s += "<div class='card'>";
   s += "<div class='label'>⬤ " + htmlEscape(label) + "</div>";
   s += "<div class='gauge'>";
-  s += "<div class='needle' style='transform:rotate(" + String(angle) + "deg) translateX(-50%);'></div>";
+  s += "<div class='needle' style='transform:rotate(" + String(displayAngle) + "deg) translateX(-50%);'></div>";
   s += "<div class='center'></div>";
   s += "</div>";
   s += "<div class='value' style='color:" + String(color) + "'>" + String(value, 1) + " " + htmlEscape(unit) + "</div>";
@@ -156,6 +160,9 @@ String buildPage() {
   page += F(".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-top:24px}");
   page += F(".wifi{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(59,130,246,.14);border:1px solid rgba(59,130,246,.25);font-size:13px;font-weight:700}");
   page += F(".trend{font-weight:800}");
+  page += F(".trend.up{color:#22c55e}");
+  page += F(".trend.down{color:#38bdf8}");
+  page += F(".trend.flat{color:#eab308}");
   page += F(".card{background:linear-gradient(180deg,rgba(15,23,42,.95),rgba(15,23,42,.72));border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:20px;box-shadow:0 16px 50px rgba(0,0,0,.35)}");
   page += F(".label{font-size:13px;opacity:.8;margin-bottom:14px;letter-spacing:.08em;text-transform:uppercase}");
   page += F(".value{font-size:30px;font-weight:800;margin-top:14px;text-align:center;letter-spacing:.01em}");
@@ -181,7 +188,7 @@ String buildPage() {
   page += F("@keyframes pulse{0%{opacity:.6;transform:scale(.98)}100%{opacity:1;transform:scale(1)}}");
   page += F(".card,.top,.summary,.status,.stats{will-change:transform,opacity}");
   page += F("</style><script>");
-  page += F("async function refreshData(){try{const r=await fetch('/data',{cache:'no-store'});const d=await r.json();const set=(sel,val)=>{const e=document.querySelector(sel);if(e)e.textContent=val;};set('#temp',d.temp.toFixed(1)+' °C');set('#humid',d.humid.toFixed(1)+' %');set('#press',d.press.toFixed(0)+' Pa');set('#lastMeasurement',d.lastMeasurement);set('#lastUpload',d.lastUpload);set('#nextUpload',d.nextUpload);set('#trend',d.trend);set('#wifi',d.wifi);set('#comfort',d.comfort);document.querySelectorAll('.gauge').forEach((g,i)=>{const a=[d.tempAngle,d.humidAngle,d.pressAngle][i];const n=g.querySelector('.needle');if(n)n.style.transform='rotate('+a+'deg) translateX(-50%)';});const m=document.querySelector('.meta');if(m)m.classList.add('updated');}catch(e){}}");
+  page += F("async function refreshData(){try{const r=await fetch('/data',{cache:'no-store'});const d=await r.json();const set=(sel,val)=>{const e=document.querySelector(sel);if(e)e.textContent=val;};set('#temp',d.temp.toFixed(1)+' °C');set('#humid',d.humid.toFixed(1)+' %');set('#press',d.press.toFixed(1)+' kPa');set('#lastMeasurement',d.lastMeasurement);set('#lastUpload',d.lastUpload);set('#nextUpload',d.nextUpload);const t=document.querySelector('#trend');if(t){t.textContent=d.trendText;t.className='trend '+d.trendClass;}set('#wifi',d.wifi);set('#comfort',d.comfort);document.querySelectorAll('.gauge').forEach((g,i)=>{const a=[d.tempAngle,d.humidAngle,d.pressAngle][i];const n=g.querySelector('.needle');if(n)n.style.transform='rotate('+a+'deg) translateX(-50%)';});const m=document.querySelector('.meta');if(m)m.classList.add('updated');}catch(e){}}");
   page += F("window.addEventListener('load',()=>{refreshData();setInterval(refreshData,15000);});");
   page += F("</script></head><body><div class='wrap'>");
   page += F("<div class='top'><div><h1>ESP32 Home Dashboard</h1><div class='meta'>Live BME280 data from your sensor</div></div>");
@@ -189,10 +196,10 @@ String buildPage() {
   page += F("<div class='grid'>");
   page += gaugeHtml("Temperature", lastTemperature, -10, 50, "°C", tempColor(lastTemperature));
   page += gaugeHtml("Humidity", lastHumidity, 0, 100, "%", humidityColor(lastHumidity));
-  page += gaugeHtml("Pressure", lastPressure, 95000, 105000, "Pa", pressureColor(lastPressure));
+  page += gaugeHtml("Pressure", lastPressure / 1000.0f, 90, 104, "kPa", pressureColor(lastPressure));
   page += F("</div>");
   page += F("<div class='summary'>Comfort: <span id='comfort'>N/A</span></div>");
-  page += F("<div class='meta'>Trend: <span id='trend'>N/A</span></div>");
+  page += F("<div class='meta'>Trend: <span id='trend' class='trend flat'>→ steady</span></div>");
   page += F("<div class='meta'>Last measurement: <span id='lastMeasurement'>N/A</span></div>");
   page += F("<div class='status'>");
   page += F("<div class='pill'>Last upload: ");
@@ -208,7 +215,8 @@ String buildPage() {
   page += F("</div><div class='pill'>");
   page += statLine("Humidity min/max", minHumidity, maxHumidity, "%");
   page += F("</div><div class='pill'>");
-  page += statLine("Pressure min/max", minPressure, maxPressure, "Pa");
+  page += F("Pressure min/max: ");
+  page += String(minPressure / 1000.0f, 1) + " / " + String(maxPressure / 1000.0f, 1) + " kPa";
   page += F("</div>");
   page += F("</div>");
   page += F("</div></body></html>");
@@ -235,9 +243,18 @@ void handleRefresh() {
 
 void handleData() {
   String trend = "steady";
+  String trendText = "→ steady";
+  String trendClass = "flat";
   if (!isnan(lastTemperature) && !isnan(minTemperature) && !isnan(maxTemperature)) {
-    if (lastTemperature >= maxTemperature) trend = "warming";
-    else if (lastTemperature <= minTemperature) trend = "cooling";
+    if (lastTemperature >= maxTemperature) {
+      trend = "warming";
+      trendText = "↑ warming";
+      trendClass = "up";
+    } else if (lastTemperature <= minTemperature) {
+      trend = "cooling";
+      trendText = "↓ cooling";
+      trendClass = "down";
+    }
   }
 
   String comfort = "N/A";
@@ -261,11 +278,13 @@ void handleData() {
   json += "\"press\":" + String(lastPressure, 0) + ",";
   json += "\"tempAngle\":" + String((int)(-120 + constrain((lastTemperature + 10) / 60.0f, 0.0f, 1.0f) * 240)) + ",";
   json += "\"humidAngle\":" + String((int)(-120 + constrain(lastHumidity / 100.0f, 0.0f, 1.0f) * 240)) + ",";
-  json += "\"pressAngle\":" + String((int)(-120 + constrain((lastPressure - 95000.0f) / 10000.0f, 0.0f, 1.0f) * 240) + 18) + ",";
+  json += "\"pressAngle\":" + String((int)(-75 + constrain((lastPressure / 1000.0f - 90.0f) / 14.0f, 0.0f, 1.0f) * 150)) + ",";
   json += "\"lastMeasurement\":\"" + lastMeasurement + "\",";
   json += "\"lastUpload\":\"" + lastUpload + "\",";
   json += "\"nextUpload\":\"" + nextUpload + "\",";
   json += "\"trend\":\"" + trend + "\",";
+  json += "\"trendText\":\"" + trendText + "\",";
+  json += "\"trendClass\":\"" + trendClass + "\",";
   json += "\"wifi\":\"" + String(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected") + "\",";
   json += "\"comfort\":\"" + comfort + "\"";
   json += "}";
