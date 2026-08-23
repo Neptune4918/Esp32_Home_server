@@ -1,0 +1,7 @@
+.idea/
+.vscode/
+*.user
+*.log
+Thumbs.db
+Desktop.ini
+firmware/**/secrets.h

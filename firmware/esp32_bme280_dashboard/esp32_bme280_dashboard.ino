@@ -1,0 +1,174 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <HTTPClient.h>
+#include <Wire.h>
+#include <Adafruit_BME280.h>
+#include "secrets.h" 
+//include your WiFi and ThingSpeak credentials in this file with this format:
+
+// #pragma once
+// #define WIFI_SSID "your_wifi_ssid"
+// #define WIFI_PASSWORD "your_wifi_password"
+// #define THINGSPEAK_API_KEY "your_thingspeak_api_key"
+
+Adafruit_BME280 bme;
+WebServer server(80);
+
+float lastTemperature = NAN;
+float lastHumidity = NAN;
+float lastPressure = NAN;
+unsigned long lastMeasurementMs = 0;
+const unsigned long measurementIntervalMs = 60UL * 60UL * 1000UL;
+
+String htmlEscape(const String& s) {
+  String out;
+  out.reserve(s.length());
+  for (size_t i = 0; i < s.length(); ++i) {
+    char c = s[i];
+    if (c == '&') out += F("&amp;");
+    else if (c == '<') out += F("&lt;");
+    else if (c == '>') out += F("&gt;");
+    else if (c == '"') out += F("&quot;");
+    else out += c;
+  }
+  return out;
+}
+
+void readBme280() {
+  lastTemperature = bme.readTemperature();
+  lastHumidity = bme.readHumidity();
+  lastPressure = bme.readPressure() / 100.0f;
+  lastMeasurementMs = millis();
+}
+
+void sendToThingSpeak(float t, float h, float p) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi not connected, skipping ThingSpeak upload");
+    return;
+  }
+
+  HTTPClient http;
+  String url = String("http://api.thingspeak.com/update?api_key=")
+             + THINGSPEAK_API_KEY
+             + "&field1=" + String(t, 2)
+             + "&field2=" + String(p, 2)
+             + "&field3=" + String(h, 2);
+
+  http.begin(url);
+  int code = http.GET();
+  String payload = http.getString();
+  Serial.printf("ThingSpeak HTTP %d, response: %s\n", code, payload.c_str());
+  http.end();
+}
+
+String gaugeHtml(const char* label, float value, float minValue, float maxValue, const char* unit, const char* color) {
+  float ratio = (value - minValue) / (maxValue - minValue);
+  if (ratio < 0) ratio = 0;
+  if (ratio > 1) ratio = 1;
+  int angle = (int)(-120 + ratio * 240);
+
+  String s;
+  s += "<div class='card'>";
+  s += "<div class='label'>" + htmlEscape(label) + "</div>";
+  s += "<div class='gauge'>";
+  s += "<div class='needle' style='transform:rotate(" + String(angle) + "deg)'></div>";
+  s += "<div class='center'></div>";
+  s += "</div>";
+  s += "<div class='value' style='color:" + String(color) + "'>" + String(value, 1) + " " + htmlEscape(unit) + "</div>";
+  s += "</div>";
+  return s;
+}
+
+String buildPage() {
+  String page;
+  page += F("<!doctype html><html><head><meta charset='utf-8'>");
+  page += F("<meta name='viewport' content='width=device-width,initial-scale=1'>");
+  page += F("<meta http-equiv='refresh' content='15'>");
+  page += F("<title>ESP32 Home Dashboard</title>");
+  page += F("<style>");
+  page += F(":root{color-scheme:dark}");
+  page += F("body{margin:0;font-family:system-ui,Segoe UI,sans-serif;background:radial-gradient(circle at top,#1e293b 0,#0f172a 50%,#020617 100%);color:#e5e7eb}");
+  page += F(".wrap{max-width:1000px;margin:0 auto;padding:24px}");
+  page += F(".top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.16);border-radius:24px;padding:20px 22px;backdrop-filter:blur(10px)}");
+  page += F(".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-top:24px}");
+  page += F(".card{background:linear-gradient(180deg,rgba(15,23,42,.95),rgba(15,23,42,.72));border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:20px;box-shadow:0 16px 50px rgba(0,0,0,.35)}");
+  page += F(".label{font-size:13px;opacity:.8;margin-bottom:14px;letter-spacing:.08em;text-transform:uppercase}");
+  page += F(".value{font-size:30px;font-weight:800;margin-top:14px;text-align:center;letter-spacing:.01em}");
+  page += F(".gauge{position:relative;width:180px;height:90px;margin:0 auto;border-radius:180px 180px 0 0;background:conic-gradient(from 180deg,#22c55e 0 33%,#eab308 33% 66%,#ef4444 66% 100%);overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}");
+  page += F(".gauge:after{content:'';position:absolute;left:18px;right:18px;bottom:0;height:72px;background:radial-gradient(circle at center,#0f172a,#030712);border-radius:180px 180px 0 0}");
+  page += F(".needle{position:absolute;left:50%;bottom:0;width:4px;height:78px;background:linear-gradient(180deg,#f8fafc,#38bdf8);transform-origin:bottom center;border-radius:99px;z-index:2;box-shadow:0 0 12px rgba(56,189,248,.55)}");
+  page += F(".center{position:absolute;left:50%;bottom:-6px;width:18px;height:18px;background:#f8fafc;border-radius:50%;transform:translateX(-50%);z-index:3}");
+  page += F(".actions{margin-top:22px;display:flex;gap:12px;flex-wrap:wrap}");
+  page += F("button,a.btn{border:0;border-radius:14px;padding:14px 18px;font-weight:700;text-decoration:none;cursor:pointer;transition:transform .15s ease,opacity .15s ease}");
+  page += F("button:hover,a.btn:hover{transform:translateY(-1px);opacity:.95}");
+  page += F(".primary{background:linear-gradient(135deg,#38bdf8,#2563eb);color:#eff6ff;box-shadow:0 8px 24px rgba(37,99,235,.32)}");
+  page += F(".ghost{background:rgba(31,41,55,.9);color:#e5e7eb;border:1px solid rgba(148,163,184,.15)}");
+  page += F(".meta{margin-top:14px;opacity:.72;font-size:14px}");
+  page += F("</style></head><body><div class='wrap'>");
+  page += F("<div class='top'><div><h1>ESP32 Home Dashboard</h1><div class='meta'>Live BME280 data from your sensor</div></div>");
+  page += F("<div class='actions'><a class='btn primary' href='/measure'>Measure now</a><a class='btn ghost' href='/refresh'>Refresh</a></div></div>");
+  page += F("<div class='grid'>");
+  page += gaugeHtml("Temperature", lastTemperature, -10, 50, "°C", "#38bdf8");
+  page += gaugeHtml("Humidity", lastHumidity, 0, 100, "%", "#22c55e");
+  page += gaugeHtml("Pressure", lastPressure, 950, 1050, "hPa", "#f59e0b");
+  page += F("</div>");
+  page += F("<div class='meta'>Last measurement: ");
+  page += String(lastMeasurementMs ? (millis() - lastMeasurementMs) / 1000 : 0);
+  page += F(" s ago</div>");
+  page += F("</div></body></html>");
+  return page;
+}
+
+void handleRoot() {
+  server.send(200, "text/html; charset=utf-8", buildPage());
+}
+
+void handleMeasure() {
+  readBme280();
+  sendToThingSpeak(lastTemperature, lastHumidity, lastPressure);
+  server.sendHeader("Location", "/");
+  server.send(302, "text/plain", "Measured");
+}
+
+void handleRefresh() {
+  readBme280();
+  server.sendHeader("Location", "/");
+  server.send(302, "text/plain", "Refreshed");
+}
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin();
+
+  if (!bme.begin(0x76)) {
+    Serial.println("BME280 not found");
+    while (true) delay(1000);
+  }
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print('.');
+  }
+
+  readBme280();
+
+  server.on("/", handleRoot);
+  server.on("/measure", handleMeasure);
+  server.on("/refresh", handleRefresh);
+  server.begin();
+
+  Serial.println();
+  Serial.print("Open: http://");
+  Serial.println(WiFi.localIP());
+}
+
+void loop() {
+  server.handleClient();
+
+  if (millis() - lastMeasurementMs >= measurementIntervalMs) {
+    readBme280();
+    sendToThingSpeak(lastTemperature, lastHumidity, lastPressure);
+  }
+}
