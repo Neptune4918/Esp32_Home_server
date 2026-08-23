@@ -1,6 +1,6 @@
 {
   "name": "esp32-home-dashboard-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Desktop wrapper for the ESP32 Home Dashboard web page.",
   "main": "main.js",
   "scripts": {
