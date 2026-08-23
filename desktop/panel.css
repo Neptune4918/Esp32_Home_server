@@ -199,6 +199,19 @@ body.expanded .panel {
   border: 1px solid rgba(56, 189, 248, .25);
   border-radius: 999px;
   padding: 4px 8px;
+  display: none;
+  opacity: 0;
+  /* Slides in from whichever screen edge the widget is docked to, like it's
+     entering from just off-screen rather than popping in from nothing. */
+  transform: translateX(28px);
+  transition: opacity .32s cubic-bezier(.16, 1, .3, 1), transform .32s cubic-bezier(.16, 1, .3, 1);
+}
+
+body[data-edge="left"] .extra-info .pill { transform: translateX(-28px); }
+
+.extra-info .pill.visible {
+  opacity: .8;
+  transform: translateX(0);
 }
 
 .status-line {

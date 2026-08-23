@@ -1,5 +1,6 @@
 let config = null;
 let hideTimer = null;
+let lastData = {}; // last known sensor payload, so pills can render immediately on save
 
 const body = document.body;
 const bubble = document.getElementById('bubble');
@@ -13,6 +14,54 @@ const quitBtn = document.getElementById('quitBtn');
 const measureNowBtn = document.getElementById('measureNowBtn');
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 const backBtn = document.getElementById('backBtn');
+
+// Extra-info "pills" (Comfort/Trend/Wi-Fi/Last upload) are persistent DOM
+// nodes toggled via a CSS class rather than rebuilt with innerHTML each
+// render. That's what lets them animate in/out smoothly instead of just
+// popping into existence, and lets Save show/hide them instantly.
+const PILL_WIDGETS = ['comfort', 'trend', 'wifi', 'lastUpload'];
+const PILL_TRANSITION_MS = 320; // must match the CSS transition duration
+const pillEls = {};
+const pillHideTimers = {};
+PILL_WIDGETS.forEach((key) => {
+  pillEls[key] = document.getElementById(`pill-${key}`);
+});
+
+function setPillText(key, text) {
+  const el = pillEls[key];
+  if (el) el.textContent = text;
+}
+
+function showPill(key) {
+  const el = pillEls[key];
+  if (!el) return;
+  if (pillHideTimers[key]) {
+    clearTimeout(pillHideTimers[key]);
+    delete pillHideTimers[key];
+  }
+  if (el.classList.contains('visible')) return;
+  el.style.display = 'block';
+  // Force a style flush so the browser registers the "off-screen, invisible"
+  // starting state before we flip to "visible" on the next frame - otherwise
+  // both changes get batched into one and the transition never plays.
+  void el.offsetWidth;
+  requestAnimationFrame(() => el.classList.add('visible'));
+}
+
+function hidePill(key) {
+  const el = pillEls[key];
+  if (!el) return;
+  if (!el.classList.contains('visible')) {
+    el.style.display = 'none';
+    return;
+  }
+  el.classList.remove('visible');
+  if (pillHideTimers[key]) clearTimeout(pillHideTimers[key]);
+  pillHideTimers[key] = setTimeout(() => {
+    el.style.display = 'none';
+    delete pillHideTimers[key];
+  }, PILL_TRANSITION_MS);
+}
 
 function applyEdgeAttribute(edge) {
   body.setAttribute('data-edge', edge);
@@ -42,25 +91,22 @@ function showSettingsView() {
 }
 
 function renderExtraInfo(data) {
-  const container = document.getElementById('extraInfo');
-  container.innerHTML = '';
-  const widgets = config.widgets || {};
-
-  if (widgets.comfort) {
-    container.innerHTML += `<div class="pill">Comfort: ${data.comfort ?? 'N/A'}</div>`;
-  }
-  if (widgets.trend) {
-    container.innerHTML += `<div class="pill">Trend: ${data.trendText ?? 'N/A'}</div>`;
-  }
-  if (widgets.wifi) {
-    container.innerHTML += `<div class="pill">Wi-Fi: ${data.wifi ?? 'N/A'}</div>`;
-  }
-  if (widgets.lastUpload) {
-    container.innerHTML += `<div class="pill">Last upload: ${data.lastUpload ?? 'N/A'}</div>`;
-  }
+  const widgets = (config && config.widgets) || {};
+  const texts = {
+    comfort: `Comfort: ${data.comfort ?? 'N/A'}`,
+    trend: `Trend: ${data.trendText ?? 'N/A'}`,
+    wifi: `Wi-Fi: ${data.wifi ?? 'N/A'}`,
+    lastUpload: `Last upload: ${data.lastUpload ?? 'N/A'}`,
+  };
+  PILL_WIDGETS.forEach((key) => {
+    setPillText(key, texts[key]);
+    if (widgets[key]) showPill(key);
+    else hidePill(key);
+  });
 }
 
 function renderData(data) {
+  lastData = data;
   document.getElementById('temp').textContent = `${Number(data.temp).toFixed(1)} °C`;
   document.getElementById('humid').textContent = `${Number(data.humid).toFixed(1)} %`;
   document.getElementById('press').textContent = `${Number(data.press).toFixed(1)} kPa`;
@@ -122,6 +168,7 @@ saveSettingsBtn.addEventListener('click', async () => {
 
   config = await window.panelAPI.saveConfig(newConfig);
   applyEdgeAttribute(config.edge);
+  renderExtraInfo(lastData); // show/hide pills immediately, don't wait for next poll
   showDashboardView();
 });
 
