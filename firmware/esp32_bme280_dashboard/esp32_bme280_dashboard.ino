@@ -19,9 +19,9 @@ WebServer server(80);
 
 // --- Multi-device state -----------------------------------------------
 // devices[DEVICE_LIVING] is the hub's own local BME280 sensor.
-// devices[DEVICE_BEDROOM] is populated remotely by the second ESP32 node,
-// either via its own periodic POST /ingest, or refreshed on-demand when
-// the hub asks it directly during a Measure Now (see fetchNodeMeasure()).
+// devices[DEVICE_BEDROOM] is populated by polling the second ESP32 node's
+// /measure endpoint directly (see fetchNodeMeasure()) - the node has no
+// timer of its own, the hub always drives the schedule.
 struct DeviceState {
   const char* id;
   const char* name;
@@ -114,10 +114,14 @@ DeviceState* findDeviceById(const String& id) {
   return nullptr;
 }
 
-// Best-effort: ask the bedroom node to measure right now and update our
-// cached copy of its reading from the response. Used by Measure Now so
-// both rooms refresh together. If the node is unreachable/offline, we
-// simply keep whatever we already know about it - never blocks the UI.
+// Asks the bedroom node to measure right now and updates our cached copy
+// of its reading from the response. This is the ONLY way the hub learns
+// about the bedroom's readings - the node has no timer of its own and
+// never contacts the hub on its own initiative. Called both by Measure
+// Now (handleMeasure) and by the hub's own hourly cycle (loop()) right
+// before uploading to ThingSpeak, so every scheduled upload always has a
+// fresh bedroom reading. If the node is unreachable/offline, we simply
+// keep whatever we already know about it - never blocks the hub.
 bool fetchNodeMeasure() {
   if (WiFi.status() != WL_CONNECTED) return false;
 
@@ -213,7 +217,11 @@ void handleRefresh() {
   server.send(302, "text/plain", "Refreshed");
 }
 
-// Receives a pushed reading from a node (e.g. the bedroom ESP32).
+// Receives a pushed reading from a node. Not used by the current node
+// firmware (esp32_bme280_node.ino only responds to /measure requests from
+// the hub - see fetchNodeMeasure()), but kept available for future
+// push-style nodes (e.g. a battery-powered node that sleeps most of the
+// time and wakes briefly to push one reading, per IDEAS.md).
 // Expected body: {"id":"bedroom","name":"Спалня","temp":..,"humid":..,"press":..}
 void handleIngest() {
   if (!server.hasArg("plain")) {
@@ -343,6 +351,7 @@ void setup() {
   }
 
   readBme280();
+  fetchNodeMeasure(); // node has no timer of its own - hub always asks it directly
   sendToThingSpeak();
 
   // Serve the dashboard UI straight from LittleFS (data/ folder contents).
@@ -368,6 +377,7 @@ void loop() {
 
   if (millis() - lastMeasurementMs >= measurementIntervalMs) {
     readBme280();
+    fetchNodeMeasure(); // node has no timer of its own - hub always asks it directly
     sendToThingSpeak();
   }
 }

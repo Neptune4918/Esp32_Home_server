@@ -2,7 +2,11 @@
 
 ESP32 web dashboard for BME280 sensors with ThingSpeak logging. Supports
 one "hub" device (with its own local sensor) plus an optional second
-"node" device in another room, reporting to the hub over local Wi-Fi.
+"node" device in another room. The hub is fully in control of timing: it
+polls the node over local Wi-Fi whenever it needs a fresh reading (its
+own hourly ThingSpeak cycle, or a user pressing "Measure now"). The node
+has no timer of its own and never contacts the hub on its own initiative
+- it only measures and responds when asked.
 
 ## What it does
 
@@ -15,9 +19,9 @@ one "hub" device (with its own local sensor) plus an optional second
 ## Project structure
 
 - `firmware/esp32_bme280_dashboard/` - hub firmware (own sensor + web
-  dashboard + ThingSpeak upload + receives readings from node(s))
+  dashboard + ThingSpeak upload + polls the node for its reading)
 - `firmware/esp32_bme280_node/` - node firmware (a second ESP32+BME280
-  in another room, pushes its readings to the hub)
+  in another room; only responds to the hub's requests, no timer)
 
 ## Setup - hub (first ESP32, e.g. "Хол"/Living room)
 
@@ -52,14 +56,15 @@ one "hub" device (with its own local sensor) plus an optional second
 2. Install the same BME280 libraries as the hub.
 3. Copy `secrets.h.example` to `secrets.h` and fill in:
    - `WIFI_SSID` / `WIFI_PASSWORD` (same network as the hub)
-   - `HUB_ADDRESS` - hostname/IP of the hub (default
-     `esp32-home.local`)
    - `DEVICE_ID` / `DEVICE_NAME` - must match an entry the hub knows
      about (`bedroom` / "Спалня" by default)
 4. Flash the ESP32 and place it in the new room.
-5. It measures every hour, pushes its reading to the hub's `/ingest`
-   endpoint, and exposes its own `/measure` + `/data` for the hub to
-   call directly (used by "Measure now").
+5. It has no timer of its own: it just runs a small web server exposing
+   `/measure` (take a fresh reading and return it) and `/data` (return
+   the last reading). The hub calls `/measure` on its own hourly cycle
+   right before uploading to ThingSpeak, and also when "Measure now" is
+   pressed - so the node's readings are always as fresh as the hub asked
+   for, with no separate schedule to keep in sync.
 
 ## ThingSpeak field mapping
 
@@ -74,8 +79,8 @@ The hub uploads all rooms to the **same** ThingSpeak channel:
 | field5 | Спалня (node)    | Pressure     |
 | field6 | Спалня (node)    | Humidity     |
 
-Fields 4-6 are only sent once the hub has heard from the node at least
-once (they're simply omitted before that).
+Fields 4-6 are only sent once the hub has successfully polled the node at
+least once (they're simply omitted before that).
 
 ## Notes
 
@@ -83,9 +88,12 @@ once (they're simply omitted before that).
 - The `Measure now` button triggers a local measurement on the hub and
   (if configured) asks the node to measure too - no ThingSpeak upload.
 - The hourly upload cycle is controlled by `measurementIntervalMs` in
-  the hub sketch.
+  the hub sketch. Right before each scheduled upload, the hub also polls
+  the node for a fresh reading (same as "Measure now" does), so ThingSpeak
+  always gets the node's latest value, not a stale one.
 - A node is considered "offline" on the dashboard if the hub hasn't
-  heard from it in over 2x its expected reporting interval.
+  successfully polled it in over 2x its expected reporting interval.
 - Communication between node and hub is plain HTTP over the local
-  Wi-Fi network (no cloud/internet round-trip needed between them).
+  Wi-Fi network (no cloud/internet round-trip needed between them). The
+  hub always initiates the request; the node never contacts the hub.
 

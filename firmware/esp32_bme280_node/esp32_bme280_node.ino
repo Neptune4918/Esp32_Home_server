@@ -1,12 +1,13 @@
 #include <WiFi.h>
 #include <WebServer.h>
-#include <HTTPClient.h>
 #include <Wire.h>
 #include <Adafruit_BME280.h>
 #include <ESPmDNS.h>
 #include "secrets.h"
 // Copy secrets.h.example to secrets.h and fill in your own values:
-// WIFI_SSID, WIFI_PASSWORD, HUB_ADDRESS, DEVICE_ID, DEVICE_NAME
+// WIFI_SSID, WIFI_PASSWORD, DEVICE_ID, DEVICE_NAME
+// (HUB_ADDRESS is currently unused - the node never contacts the hub on
+// its own; the hub polls this node's /measure endpoint instead.)
 
 // I2C pins for the BME280. Many ESP32 boards (classic Wroom) are fine with
 // Wire.begin() and its default pins (SDA=21, SCL=22), but some boards (e.g.
@@ -27,8 +28,6 @@ float lastTemperature = NAN;
 float lastHumidity = NAN;
 float lastPressure = NAN;
 unsigned long lastMeasurementMs = 0;
-unsigned long lastIngestMs = 0;
-const unsigned long measurementIntervalMs = 60UL * 60UL * 1000UL;
 
 void readBme280() {
   lastTemperature = bme.readTemperature();
@@ -39,52 +38,13 @@ void readBme280() {
                 DEVICE_ID, lastTemperature, lastHumidity, lastPressure);
 }
 
-// Sends the latest reading to the hub's /ingest endpoint. Non-blocking to
-// the rest of the loop logic - failures are logged and simply retried on
-// the next measurement cycle, never block the node's own operation.
-bool sendToHub(float t, float h, float p) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi not connected, skipping hub upload");
-    return false;
-  }
-
-  HTTPClient http;
-  String url = String("http://") + HUB_ADDRESS + "/ingest";
-  http.begin(url);
-  http.addHeader("Content-Type", "application/json");
-  http.setTimeout(4000);
-
-  String json = "{";
-  json += "\"id\":\"" + String(DEVICE_ID) + "\",";
-  json += "\"name\":\"" + String(DEVICE_NAME) + "\",";
-  json += "\"temp\":" + String(t, 2) + ",";
-  json += "\"humid\":" + String(h, 2) + ",";
-  json += "\"press\":" + String(p, 2);
-  json += "}";
-
-  int code = http.POST(json);
-  String payload = http.getString();
-  Serial.printf("Hub ingest HTTP %d, response: %s\n", code, payload.c_str());
-  http.end();
-
-  if (code == 200) {
-    lastIngestMs = millis();
-    return true;
-  }
-  Serial.println("Hub ingest failed, will retry on next measurement cycle");
-  return false;
-}
-
+// The node has no timer of its own and never contacts the hub on its own
+// initiative - it only measures and responds when the hub asks (GET
+// /measure), whether that's the hub's own hourly ThingSpeak cycle or a
+// user pressing "Measure now". This keeps timing fully controlled by the
+// hub and avoids any node-side push/deadlock concerns entirely.
 void handleMeasure() {
   readBme280();
-  // Note: deliberately NOT calling sendToHub() here. The hub already gets
-  // this exact reading in the HTTP response below (it calls this endpoint
-  // and parses the body directly). If we also tried to POST back to the
-  // hub's /ingest from inside this handler, both sides would be doing a
-  // blocking HTTP call to each other at the same time (single-threaded
-  // WebServer on both ends) - a deadlock that only resolves via timeout
-  // (seen as "HTTP -11" on both hub and node). The periodic /ingest push
-  // in loop() is enough to keep the hub updated between Measure Now calls.
 
   String json = "{";
   json += "\"id\":\"" + String(DEVICE_ID) + "\",";
@@ -102,8 +62,7 @@ void handleData() {
   json += "\"temp\":" + String(lastTemperature, 1) + ",";
   json += "\"humid\":" + String(lastHumidity, 1) + ",";
   json += "\"press\":" + String(lastPressure / 1000.0f, 1) + ",";
-  json += "\"lastMeasurementMs\":" + String(lastMeasurementMs) + ",";
-  json += "\"lastIngestMs\":" + String(lastIngestMs);
+  json += "\"lastMeasurementMs\":" + String(lastMeasurementMs);
   json += "}";
   server.send(200, "application/json", json);
 }
@@ -135,21 +94,17 @@ void setup() {
     Serial.println("mDNS failed to start");
   }
 
+  // Take one reading at boot so /data has something valid even before the
+  // hub's first poll.
   readBme280();
-  sendToHub(lastTemperature, lastHumidity, lastPressure);
 
   // No web UI here - this node only exposes a small API for the hub.
   server.on("/measure", handleMeasure);
   server.on("/data", handleData);
   server.begin();
-  Serial.println("Node HTTP server started");
+  Serial.println("Node HTTP server started - waiting for hub requests");
 }
 
 void loop() {
   server.handleClient();
-
-  if (millis() - lastMeasurementMs >= measurementIntervalMs) {
-    readBme280();
-    sendToHub(lastTemperature, lastHumidity, lastPressure);
-  }
 }
