@@ -8,6 +8,18 @@
 // Copy secrets.h.example to secrets.h and fill in your own values:
 // WIFI_SSID, WIFI_PASSWORD, HUB_ADDRESS, DEVICE_ID, DEVICE_NAME
 
+// I2C pins for the BME280. Many ESP32 boards (classic Wroom) are fine with
+// Wire.begin() and its default pins (SDA=21, SCL=22), but some boards (e.g.
+// ESP32-C3 "Super Mini" style modules) need explicit pins. Override these by
+// #define-ing NODE_SDA_PIN / NODE_SCL_PIN in your secrets.h before this file
+// picks its defaults.
+#ifndef NODE_SDA_PIN
+#define NODE_SDA_PIN 6
+#endif
+#ifndef NODE_SCL_PIN
+#define NODE_SCL_PIN 7
+#endif
+
 Adafruit_BME280 bme;
 WebServer server(80);
 
@@ -91,9 +103,9 @@ void handleData() {
 
 void setup() {
   Serial.begin(115200);
-  Wire.begin();
+  Wire.begin(NODE_SDA_PIN, NODE_SCL_PIN);
 
-  if (!bme.begin(0x76)) {
+  if (!bme.begin(0x76) && !bme.begin(0x77)) {
     Serial.println("BME280 not found");
     while (true) delay(1000);
   }
