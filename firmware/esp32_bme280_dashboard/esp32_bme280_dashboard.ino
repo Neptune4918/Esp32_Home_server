@@ -25,17 +25,26 @@ WebServer server(80);
 struct DeviceState {
   const char* id;
   const char* name;
-  float temp = NAN;
-  float humid = NAN;
-  float press = NAN;
-  float tempMin = NAN;
-  float tempMax = NAN;
-  float humidMin = NAN;
-  float humidMax = NAN;
-  float pressMin = NAN;
-  float pressMax = NAN;
-  unsigned long lastSeenMs = 0;
-  bool everSeen = false;
+  float temp;
+  float humid;
+  float press;
+  float tempMin;
+  float tempMax;
+  float humidMin;
+  float humidMax;
+  float pressMin;
+  float pressMax;
+  unsigned long lastSeenMs;
+  bool everSeen;
+
+  // Explicit constructor instead of default member initializers: some
+  // Arduino ESP32 core toolchains build with a C++ standard where NSDMIs
+  // disqualify a struct from aggregate-initialization, which breaks the
+  // brace-init list below ("could not convert ... to DeviceState").
+  DeviceState(const char* id_, const char* name_)
+    : id(id_), name(name_), temp(NAN), humid(NAN), press(NAN),
+      tempMin(NAN), tempMax(NAN), humidMin(NAN), humidMax(NAN),
+      pressMin(NAN), pressMax(NAN), lastSeenMs(0), everSeen(false) {}
 };
 
 const int DEVICE_LIVING = 0;
@@ -43,8 +52,8 @@ const int DEVICE_BEDROOM = 1;
 const int DEVICE_COUNT = 2;
 
 DeviceState devices[DEVICE_COUNT] = {
-  { "living", "Хол" },
-  { "bedroom", "Спалня" }
+  DeviceState("living", "Хол"),
+  DeviceState("bedroom", "Спалня")
 };
 
 // A remote device is considered "offline" if we haven't heard from it in
