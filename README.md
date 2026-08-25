@@ -33,7 +33,17 @@ one "hub" device (with its own local sensor) plus an optional second
    - `NODE_ADDRESS` - hostname/IP of the bedroom node (default
      `esp32-bedroom.local`, only needed once you add a node - see below)
 4. Flash the ESP32.
-5. Open the IP address (or `http://esp32-home.local`) printed in Serial
+5. **Upload the filesystem (`data/` folder)** - this is a separate step
+   from flashing the sketch, and is required whenever `index.html`,
+   `app.js`, or `style.css` change (like after this multi-room update).
+   Otherwise the ESP32 keeps serving the old cached website even though
+   the sketch itself is up to date.
+   - Arduino IDE 2.x: install the "Upload LittleFS to Pico/ESP32/ESP8266"
+     extra tool if you haven't already (Tools menu → search "littlefs"),
+     then use it to upload the `data/` folder.
+   - Arduino IDE 1.x: Tools → "ESP32 Sketch Data Upload".
+   - PlatformIO: `pio run --target uploadfs`.
+6. Open the IP address (or `http://esp32-home.local`) printed in Serial
    Monitor.
 
 ## Setup - node (second ESP32, e.g. "Спалня"/Bedroom, optional)

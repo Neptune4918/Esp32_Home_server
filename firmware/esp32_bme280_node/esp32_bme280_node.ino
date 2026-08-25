@@ -77,7 +77,14 @@ bool sendToHub(float t, float h, float p) {
 
 void handleMeasure() {
   readBme280();
-  sendToHub(lastTemperature, lastHumidity, lastPressure);
+  // Note: deliberately NOT calling sendToHub() here. The hub already gets
+  // this exact reading in the HTTP response below (it calls this endpoint
+  // and parses the body directly). If we also tried to POST back to the
+  // hub's /ingest from inside this handler, both sides would be doing a
+  // blocking HTTP call to each other at the same time (single-threaded
+  // WebServer on both ends) - a deadlock that only resolves via timeout
+  // (seen as "HTTP -11" on both hub and node). The periodic /ingest push
+  // in loop() is enough to keep the hub updated between Measure Now calls.
 
   String json = "{";
   json += "\"id\":\"" + String(DEVICE_ID) + "\",";
