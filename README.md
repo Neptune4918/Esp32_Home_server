@@ -15,6 +15,8 @@ has no timer of its own and never contacts the hub on its own initiative
 - A "Measure now" button measures all rooms on demand
 - Sends periodic readings to ThingSpeak over Wi-Fi
 - Serves the dashboard directly from the hub ESP32
+- Optional Windows desktop app (tray widget) that shows the same data
+  right on your desktop, with auto-update
 
 ## Project structure
 
@@ -22,6 +24,8 @@ has no timer of its own and never contacts the hub on its own initiative
   dashboard + ThingSpeak upload + polls the node for its reading)
 - `firmware/esp32_bme280_node/` - node firmware (a second ESP32+BME280
   in another room; only responds to the hub's requests, no timer)
+- `desktop/` - Windows tray-widget desktop app (Electron) that connects
+  to the hub's website and shows the current readings on the desktop
 
 ## Setup - hub (first ESP32, e.g. "Хол"/Living room)
 
@@ -65,6 +69,17 @@ has no timer of its own and never contacts the hub on its own initiative
    right before uploading to ThingSpeak, and also when "Measure now" is
    pressed - so the node's readings are always as fresh as the hub asked
    for, with no separate schedule to keep in sync.
+
+## Setup - desktop app (optional, Windows)
+
+A small Electron tray-widget app that shows the same live readings
+right on your desktop, no browser needed.
+
+- **Just want to use it:** download the latest installer from
+  [Releases](https://github.com/Neptune4918/Esp32_Home_server/releases),
+  run it, and it'll sit in your system tray. It auto-updates itself.
+- **Developing/building it yourself:** see [`desktop/README.md`](desktop/README.md)
+  for dev mode, building the `.exe`, and how to publish new versions.
 
 ## ThingSpeak field mapping
 
