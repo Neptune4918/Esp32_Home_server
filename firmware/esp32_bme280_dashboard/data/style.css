@@ -221,3 +221,30 @@ button:hover, a.btn:hover {
 .card, .top, .summary, .status, .stats {
   will-change: transform, opacity;
 }
+
+.room {
+  margin-top: 28px;
+  animation: fadeUp .45s ease both;
+}
+
+.room-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.room-name {
+  margin: 0;
+  font-size: 20px;
+}
+
+.room.offline .room-name {
+  opacity: .6;
+}
+
+.room.offline .room-wifi {
+  background: rgba(239, 68, 68, .14);
+  border-color: rgba(239, 68, 68, .3);
+}

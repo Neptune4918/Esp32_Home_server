@@ -118,6 +118,34 @@ body.expanded .panel {
 
 .view.hidden { display: none; }
 
+.rooms {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.room {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.room + .room {
+  border-top: 1px solid rgba(148, 163, 184, .15);
+  padding-top: 14px;
+}
+
+.room-name {
+  font-size: 13px;
+  font-weight: 700;
+  opacity: .85;
+  text-align: center;
+}
+
+.room.offline .room-name { opacity: .5; }
+.room.offline .gauge-card { opacity: .6; }
+
 .gauge-card {
   background: rgba(15, 23, 42, .6);
   border: 1px solid rgba(148, 163, 184, .15);

@@ -21,44 +21,52 @@
     </div>
 
     <div id="dashboardView" class="view">
-      <div class="gauge-card">
-        <div class="label">Temperature</div>
-        <div class="gauge">
-          <div class="needle" id="needle-temp"></div>
-          <div class="center"></div>
-        </div>
-        <div class="value" id="temp">-- °C</div>
-      </div>
-
-      <div class="gauge-card">
-        <div class="label">Humidity</div>
-        <div class="gauge">
-          <div class="needle" id="needle-humid"></div>
-          <div class="center"></div>
-        </div>
-        <div class="value" id="humid">-- %</div>
-      </div>
-
-      <div class="gauge-card">
-        <div class="label">Pressure</div>
-        <div class="gauge">
-          <div class="needle" id="needle-press"></div>
-          <div class="center"></div>
-        </div>
-        <div class="value" id="press">-- kPa</div>
-      </div>
-
-      <div id="extraInfo" class="extra-info">
-        <div class="pill" id="pill-comfort"></div>
-        <div class="pill" id="pill-trend"></div>
-        <div class="pill" id="pill-wifi"></div>
-        <div class="pill" id="pill-lastUpload"></div>
-      </div>
-
       <button id="measureNowBtn" class="measure-btn">Measure now</button>
+
+      <div id="rooms" class="rooms"></div>
 
       <div class="status-line" id="statusLine">Connecting...</div>
     </div>
+
+    <template id="room-template">
+      <div class="room">
+        <div class="room-name"></div>
+
+        <div class="gauge-card">
+          <div class="label">Temperature</div>
+          <div class="gauge">
+            <div class="needle needle-temp"></div>
+            <div class="center"></div>
+          </div>
+          <div class="value value-temp">-- °C</div>
+        </div>
+
+        <div class="gauge-card">
+          <div class="label">Humidity</div>
+          <div class="gauge">
+            <div class="needle needle-humid"></div>
+            <div class="center"></div>
+          </div>
+          <div class="value value-humid">-- %</div>
+        </div>
+
+        <div class="gauge-card">
+          <div class="label">Pressure</div>
+          <div class="gauge">
+            <div class="needle needle-press"></div>
+            <div class="center"></div>
+          </div>
+          <div class="value value-press">-- kPa</div>
+        </div>
+
+        <div class="extra-info">
+          <div class="pill pill-comfort"></div>
+          <div class="pill pill-trend"></div>
+          <div class="pill pill-wifi"></div>
+          <div class="pill pill-lastUpload"></div>
+        </div>
+      </div>
+    </template>
 
     <div id="settingsView" class="view hidden">
       <h2>Settings</h2>

@@ -14,10 +14,9 @@
     <div class="top">
       <div>
         <h1>ESP32 Home Dashboard</h1>
-        <div class="meta">Live BME280 data from your sensor</div>
+        <div class="meta">Live BME280 data from your sensors</div>
       </div>
       <div style="display:grid;gap:10px;justify-items:end">
-        <div class="wifi" id="wifi">Wi-Fi: ...</div>
         <div class="actions">
           <a class="btn primary" href="/measure">Measure now</a>
           <a class="btn ghost" href="/refresh">Refresh</a>
@@ -25,50 +24,61 @@
       </div>
     </div>
 
-    <div class="grid">
-      <div class="card">
-        <div class="label">⬤ Temperature</div>
-        <div class="gauge">
-          <div class="needle" id="needle-temp"></div>
-          <div class="center"></div>
-        </div>
-        <div class="value" id="temp">-- °C</div>
-      </div>
-
-      <div class="card">
-        <div class="label">⬤ Humidity</div>
-        <div class="gauge">
-          <div class="needle" id="needle-humid"></div>
-          <div class="center"></div>
-        </div>
-        <div class="value" id="humid">-- %</div>
-      </div>
-
-      <div class="card">
-        <div class="label">⬤ Pressure</div>
-        <div class="gauge">
-          <div class="needle" id="needle-press"></div>
-          <div class="center"></div>
-        </div>
-        <div class="value" id="press">-- kPa</div>
-      </div>
-    </div>
-
-    <div class="summary">Comfort: <span id="comfort">N/A</span></div>
-    <div class="meta">Trend: <span id="trend" class="trend flat">→ steady</span></div>
-    <div class="meta">Last measurement: <span id="lastMeasurement">N/A</span></div>
-
-    <div class="status">
-      <div class="pill">Last upload: <span id="lastUpload">never</span></div>
-      <div class="pill">Next upload in: <span id="nextUpload">...</span></div>
-    </div>
-
-    <div class="stats">
-      <div class="pill" id="tempStats">Temp min/max: -- / --</div>
-      <div class="pill" id="humidStats">Humidity min/max: -- / --</div>
-      <div class="pill" id="pressStats">Pressure min/max: -- / --</div>
-    </div>
+    <div id="rooms"></div>
   </div>
+
+  <template id="room-template">
+    <div class="room">
+      <div class="room-head">
+        <h2 class="room-name"></h2>
+        <div class="wifi room-wifi">Status: ...</div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <div class="label">⬤ Temperature</div>
+          <div class="gauge">
+            <div class="needle needle-temp"></div>
+            <div class="center"></div>
+          </div>
+          <div class="value value-temp">-- °C</div>
+        </div>
+
+        <div class="card">
+          <div class="label">⬤ Humidity</div>
+          <div class="gauge">
+            <div class="needle needle-humid"></div>
+            <div class="center"></div>
+          </div>
+          <div class="value value-humid">-- %</div>
+        </div>
+
+        <div class="card">
+          <div class="label">⬤ Pressure</div>
+          <div class="gauge">
+            <div class="needle needle-press"></div>
+            <div class="center"></div>
+          </div>
+          <div class="value value-press">-- kPa</div>
+        </div>
+      </div>
+
+      <div class="summary">Comfort: <span class="room-comfort">N/A</span></div>
+      <div class="meta">Trend: <span class="room-trend trend flat">→ steady</span></div>
+      <div class="meta">Last measurement: <span class="room-lastMeasurement">N/A</span></div>
+
+      <div class="status">
+        <div class="pill">Last upload: <span class="room-lastUpload">never</span></div>
+        <div class="pill">Next upload in: <span class="room-nextUpload">...</span></div>
+      </div>
+
+      <div class="stats">
+        <div class="pill room-tempStats">Temp min/max: -- / --</div>
+        <div class="pill room-humidStats">Humidity min/max: -- / --</div>
+        <div class="pill room-pressStats">Pressure min/max: -- / --</div>
+      </div>
+    </div>
+  </template>
 
   <script src="/app.js"></script>
 </body>

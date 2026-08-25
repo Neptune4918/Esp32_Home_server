@@ -12,49 +12,153 @@
 // #define WIFI_SSID "your_wifi_ssid"
 // #define WIFI_PASSWORD "your_wifi_password"
 // #define THINGSPEAK_API_KEY "your_thingspeak_api_key"
+// #define NODE_ADDRESS "esp32-bedroom.local"   // hostname/IP of the "bedroom" node
 
 Adafruit_BME280 bme;
 WebServer server(80);
 
-float lastTemperature = NAN;
-float lastHumidity = NAN;
-float lastPressure = NAN;
-float minTemperature = NAN;
-float maxTemperature = NAN;
-float minHumidity = NAN;
-float maxHumidity = NAN;
-float minPressure = NAN;
-float maxPressure = NAN;
+// --- Multi-device state -----------------------------------------------
+// devices[DEVICE_LIVING] is the hub's own local BME280 sensor.
+// devices[DEVICE_BEDROOM] is populated remotely by the second ESP32 node,
+// either via its own periodic POST /ingest, or refreshed on-demand when
+// the hub asks it directly during a Measure Now (see fetchNodeMeasure()).
+struct DeviceState {
+  const char* id;
+  const char* name;
+  float temp = NAN;
+  float humid = NAN;
+  float press = NAN;
+  float tempMin = NAN;
+  float tempMax = NAN;
+  float humidMin = NAN;
+  float humidMax = NAN;
+  float pressMin = NAN;
+  float pressMax = NAN;
+  unsigned long lastSeenMs = 0;
+  bool everSeen = false;
+};
+
+const int DEVICE_LIVING = 0;
+const int DEVICE_BEDROOM = 1;
+const int DEVICE_COUNT = 2;
+
+DeviceState devices[DEVICE_COUNT] = {
+  { "living", "Хол" },
+  { "bedroom", "Спалня" }
+};
+
+// A remote device is considered "offline" if we haven't heard from it in
+// more than this many ms (2x its expected hourly reporting interval).
+const unsigned long remoteOfflineTimeoutMs = 2UL * 60UL * 60UL * 1000UL;
+
 unsigned long lastMeasurementMs = 0;
 unsigned long lastUploadMs = 0;
 const unsigned long measurementIntervalMs = 60UL * 60UL * 1000UL;
 
-void readBme280() {
-  lastTemperature = bme.readTemperature();
-  lastHumidity = bme.readHumidity();
-  lastPressure = bme.readPressure();
-  lastMeasurementMs = millis();
-  if (isnan(minTemperature) || lastTemperature < minTemperature) minTemperature = lastTemperature;
-  if (isnan(maxTemperature) || lastTemperature > maxTemperature) maxTemperature = lastTemperature;
-  if (isnan(minHumidity) || lastHumidity < minHumidity) minHumidity = lastHumidity;
-  if (isnan(maxHumidity) || lastHumidity > maxHumidity) maxHumidity = lastHumidity;
-  if (isnan(minPressure) || lastPressure < minPressure) minPressure = lastPressure;
-  if (isnan(maxPressure) || lastPressure > maxPressure) maxPressure = lastPressure;
-  Serial.printf("Sensor read -> T: %.2f C, H: %.2f %%, P: %.0f Pa\n", lastTemperature, lastHumidity, lastPressure);
+void updateDeviceReading(DeviceState& d, float t, float h, float p) {
+  d.temp = t;
+  d.humid = h;
+  d.press = p;
+  d.lastSeenMs = millis();
+  d.everSeen = true;
+  if (isnan(d.tempMin) || t < d.tempMin) d.tempMin = t;
+  if (isnan(d.tempMax) || t > d.tempMax) d.tempMax = t;
+  if (isnan(d.humidMin) || h < d.humidMin) d.humidMin = h;
+  if (isnan(d.humidMax) || h > d.humidMax) d.humidMax = h;
+  if (isnan(d.pressMin) || p < d.pressMin) d.pressMin = p;
+  if (isnan(d.pressMax) || p > d.pressMax) d.pressMax = p;
 }
 
-void sendToThingSpeak(float t, float h, float p) {
+void readBme280() {
+  float t = bme.readTemperature();
+  float h = bme.readHumidity();
+  float p = bme.readPressure();
+  lastMeasurementMs = millis();
+  updateDeviceReading(devices[DEVICE_LIVING], t, h, p);
+  Serial.printf("Sensor read -> T: %.2f C, H: %.2f %%, P: %.0f Pa\n", t, h, p);
+}
+
+// Minimal hand-rolled JSON value extraction - good enough since we fully
+// control the payload shape on both ends (no external ArduinoJson dep).
+float extractJsonFloat(const String& json, const char* key) {
+  String pattern = String("\"") + key + "\":";
+  int idx = json.indexOf(pattern);
+  if (idx < 0) return NAN;
+  idx += pattern.length();
+  return json.substring(idx).toFloat();
+}
+
+String extractJsonString(const String& json, const char* key) {
+  String pattern = String("\"") + key + "\":\"";
+  int idx = json.indexOf(pattern);
+  if (idx < 0) return "";
+  idx += pattern.length();
+  int end = json.indexOf("\"", idx);
+  if (end < 0) return "";
+  return json.substring(idx, end);
+}
+
+DeviceState* findDeviceById(const String& id) {
+  for (int i = 0; i < DEVICE_COUNT; i++) {
+    if (id == devices[i].id) return &devices[i];
+  }
+  return nullptr;
+}
+
+// Best-effort: ask the bedroom node to measure right now and update our
+// cached copy of its reading from the response. Used by Measure Now so
+// both rooms refresh together. If the node is unreachable/offline, we
+// simply keep whatever we already know about it - never blocks the UI.
+bool fetchNodeMeasure() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  HTTPClient http;
+  String url = String("http://") + NODE_ADDRESS + "/measure";
+  http.begin(url);
+  http.setTimeout(4000);
+  int code = http.GET();
+  if (code != 200) {
+    Serial.printf("Node measure request failed, HTTP %d\n", code);
+    http.end();
+    return false;
+  }
+
+  String payload = http.getString();
+  http.end();
+
+  float t = extractJsonFloat(payload, "temp");
+  float h = extractJsonFloat(payload, "humid");
+  float p = extractJsonFloat(payload, "press") * 1000.0f; // node sends kPa, we store Pa
+  if (isnan(t) || isnan(h) || isnan(p)) {
+    Serial.println("Node measure response could not be parsed");
+    return false;
+  }
+
+  updateDeviceReading(devices[DEVICE_BEDROOM], t, h, p);
+  Serial.printf("Node measure -> T: %.2f C, H: %.2f %%, P: %.0f Pa\n", t, h, p);
+  return true;
+}
+
+void sendToThingSpeak() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi not connected, skipping ThingSpeak upload");
     return;
   }
 
+  DeviceState& living = devices[DEVICE_LIVING];
+  DeviceState& bedroom = devices[DEVICE_BEDROOM];
+
   HTTPClient http;
   String url = String("http://api.thingspeak.com/update?api_key=")
              + THINGSPEAK_API_KEY
-             + "&field1=" + String(t, 2)
-             + "&field2=" + String(p, 2)
-             + "&field3=" + String(h, 2);
+             + "&field1=" + String(living.temp, 2)
+             + "&field2=" + String(living.press, 2)
+             + "&field3=" + String(living.humid, 2);
+  if (bedroom.everSeen) {
+    url += "&field4=" + String(bedroom.temp, 2)
+         + "&field5=" + String(bedroom.press, 2)
+         + "&field6=" + String(bedroom.humid, 2);
+  }
 
   http.begin(url);
   Serial.println("ThingSpeak upload started");
@@ -87,28 +191,60 @@ String countdownText(unsigned long msUntil) {
 
 void handleMeasure() {
   readBme280();
-  Serial.println("Measure now pressed -> local refresh only");
+  fetchNodeMeasure();
+  Serial.println("Measure now pressed -> refreshed both rooms (local refresh only)");
   server.sendHeader("Location", "/");
   server.send(302, "text/plain", "Measured");
 }
 
 void handleRefresh() {
   readBme280();
-  Serial.println("Manual refresh pressed");
+  Serial.println("Manual refresh pressed (hub room only)");
   server.sendHeader("Location", "/");
   server.send(302, "text/plain", "Refreshed");
 }
 
-void handleData() {
+// Receives a pushed reading from a node (e.g. the bedroom ESP32).
+// Expected body: {"id":"bedroom","name":"Спалня","temp":..,"humid":..,"press":..}
+void handleIngest() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "text/plain", "Missing body");
+    return;
+  }
+  String body = server.arg("plain");
+  String id = extractJsonString(body, "id");
+  DeviceState* d = findDeviceById(id);
+  if (!d) {
+    Serial.println("Ingest from unknown device id: " + id);
+    server.send(404, "text/plain", "Unknown device id");
+    return;
+  }
+
+  float t = extractJsonFloat(body, "temp");
+  float h = extractJsonFloat(body, "humid");
+  float p = extractJsonFloat(body, "press");
+  if (isnan(t) || isnan(h) || isnan(p)) {
+    server.send(400, "text/plain", "Invalid payload");
+    return;
+  }
+
+  updateDeviceReading(*d, t, h, p);
+  Serial.printf("Ingest from '%s' -> T: %.2f C, H: %.2f %%, P: %.0f Pa\n", d->id, t, h, p);
+  server.send(200, "application/json", "{\"status\":\"ok\"}");
+}
+
+// Builds the JSON object for a single device, matching the shape the
+// website/desktop app expect (one entry per room in the /data array).
+String deviceJson(DeviceState& d, bool isLocal) {
   String trend = "steady";
   String trendText = "\u2192 steady";
   String trendClass = "flat";
-  if (!isnan(lastTemperature) && !isnan(minTemperature) && !isnan(maxTemperature)) {
-    if (lastTemperature >= maxTemperature) {
+  if (!isnan(d.temp) && !isnan(d.tempMin) && !isnan(d.tempMax)) {
+    if (d.temp >= d.tempMax) {
       trend = "warming";
       trendText = "\u2191 warming";
       trendClass = "up";
-    } else if (lastTemperature <= minTemperature) {
+    } else if (d.temp <= d.tempMin) {
       trend = "cooling";
       trendText = "\u2193 cooling";
       trendClass = "down";
@@ -116,42 +252,57 @@ void handleData() {
   }
 
   String comfort = "N/A";
-  if (!isnan(lastTemperature) && !isnan(lastHumidity)) {
-    if (lastTemperature >= 20.0f && lastTemperature <= 26.0f && lastHumidity >= 40.0f && lastHumidity <= 60.0f) comfort = "Good";
-    else if (lastTemperature > 26.0f) comfort = "Warm";
-    else if (lastHumidity < 35.0f) comfort = "Dry";
+  if (!isnan(d.temp) && !isnan(d.humid)) {
+    if (d.temp >= 20.0f && d.temp <= 26.0f && d.humid >= 40.0f && d.humid <= 60.0f) comfort = "Good";
+    else if (d.temp > 26.0f) comfort = "Warm";
+    else if (d.humid < 35.0f) comfort = "Dry";
     else comfort = "OK";
   }
 
   unsigned long now = millis();
-  unsigned long lastMeasurementAgo = lastMeasurementMs ? (now - lastMeasurementMs) : 0;
-  String lastMeasurement = ageText(lastMeasurementAgo);
+  bool online = isLocal ? true : (d.everSeen && (now - d.lastSeenMs) < remoteOfflineTimeoutMs);
+  String statusText = online ? "Connected" : "Disconnected";
+
+  String lastMeasurement = d.everSeen ? ageText(now - d.lastSeenMs) : String("never");
   String lastUpload = lastUploadMs ? ageText(now - lastUploadMs) : String("never");
   unsigned long remaining = lastUploadMs ? ((now - lastUploadMs) >= measurementIntervalMs ? 0 : (measurementIntervalMs - (now - lastUploadMs))) : measurementIntervalMs;
   String nextUpload = countdownText(remaining);
 
   String json = "{";
-  json += "\"temp\":" + String(lastTemperature, 1) + ",";
-  json += "\"humid\":" + String(lastHumidity, 1) + ",";
-  json += "\"press\":" + String(lastPressure / 1000.0f, 1) + ",";
-  json += "\"tempMin\":" + String(minTemperature, 1) + ",";
-  json += "\"tempMax\":" + String(maxTemperature, 1) + ",";
-  json += "\"humidMin\":" + String(minHumidity, 1) + ",";
-  json += "\"humidMax\":" + String(maxHumidity, 1) + ",";
-  json += "\"pressMin\":" + String(minPressure / 1000.0f, 1) + ",";
-  json += "\"pressMax\":" + String(maxPressure / 1000.0f, 1) + ",";
-  json += "\"tempAngle\":" + String((int)(-90 + constrain((lastTemperature + 10) / 60.0f, 0.0f, 1.0f) * 180)) + ",";
-  json += "\"humidAngle\":" + String((int)(-90 + constrain(lastHumidity / 100.0f, 0.0f, 1.0f) * 180)) + ",";
-  json += "\"pressAngle\":" + String((int)(-75 + constrain((lastPressure / 1000.0f - 90.0f) / 14.0f, 0.0f, 1.0f) * 150)) + ",";
+  json += "\"id\":\"" + String(d.id) + "\",";
+  json += "\"name\":\"" + String(d.name) + "\",";
+  json += "\"online\":" + String(online ? "true" : "false") + ",";
+  json += "\"temp\":" + String(d.temp, 1) + ",";
+  json += "\"humid\":" + String(d.humid, 1) + ",";
+  json += "\"press\":" + String(d.press / 1000.0f, 1) + ",";
+  json += "\"tempMin\":" + String(d.tempMin, 1) + ",";
+  json += "\"tempMax\":" + String(d.tempMax, 1) + ",";
+  json += "\"humidMin\":" + String(d.humidMin, 1) + ",";
+  json += "\"humidMax\":" + String(d.humidMax, 1) + ",";
+  json += "\"pressMin\":" + String(d.pressMin / 1000.0f, 1) + ",";
+  json += "\"pressMax\":" + String(d.pressMax / 1000.0f, 1) + ",";
+  json += "\"tempAngle\":" + String((int)(-90 + constrain((d.temp + 10) / 60.0f, 0.0f, 1.0f) * 180)) + ",";
+  json += "\"humidAngle\":" + String((int)(-90 + constrain(d.humid / 100.0f, 0.0f, 1.0f) * 180)) + ",";
+  json += "\"pressAngle\":" + String((int)(-75 + constrain((d.press / 1000.0f - 90.0f) / 14.0f, 0.0f, 1.0f) * 150)) + ",";
   json += "\"lastMeasurement\":\"" + lastMeasurement + "\",";
   json += "\"lastUpload\":\"" + lastUpload + "\",";
   json += "\"nextUpload\":\"" + nextUpload + "\",";
   json += "\"trend\":\"" + trend + "\",";
   json += "\"trendText\":\"" + trendText + "\",";
   json += "\"trendClass\":\"" + trendClass + "\",";
-  json += "\"wifi\":\"" + String(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected") + "\",";
+  json += "\"wifi\":\"" + statusText + "\",";
   json += "\"comfort\":\"" + comfort + "\"";
   json += "}";
+  return json;
+}
+
+void handleData() {
+  String json = "[";
+  for (int i = 0; i < DEVICE_COUNT; i++) {
+    if (i > 0) json += ",";
+    json += deviceJson(devices[i], i == DEVICE_LIVING);
+  }
+  json += "]";
   server.send(200, "application/json", json);
 }
 
@@ -183,7 +334,7 @@ void setup() {
   }
 
   readBme280();
-  sendToThingSpeak(lastTemperature, lastHumidity, lastPressure);
+  sendToThingSpeak();
 
   // Serve the dashboard UI straight from LittleFS (data/ folder contents).
   server.serveStatic("/", LittleFS, "/index.html");
@@ -194,6 +345,7 @@ void setup() {
   server.on("/measure", handleMeasure);
   server.on("/refresh", handleRefresh);
   server.on("/data", handleData);
+  server.on("/ingest", HTTP_POST, handleIngest);
   server.begin();
   Serial.println("HTTP server started");
 
@@ -207,6 +359,6 @@ void loop() {
 
   if (millis() - lastMeasurementMs >= measurementIntervalMs) {
     readBme280();
-    sendToThingSpeak(lastTemperature, lastHumidity, lastPressure);
+    sendToThingSpeak();
   }
 }
