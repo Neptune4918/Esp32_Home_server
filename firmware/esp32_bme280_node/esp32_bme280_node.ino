@@ -34,7 +34,7 @@ void readBme280() {
   lastHumidity = bme.readHumidity();
   lastPressure = bme.readPressure();
   lastMeasurementMs = millis();
-  Serial.printf("[%s] Sensor read -> T: %.2f C, H: %.2f %%, P: %.0f Pa\n",
+  Serial.printf("[%s] Sensor read -> T: %.2f C, H: %.2f %%, P: %.2f Pa\n",
                 DEVICE_ID, lastTemperature, lastHumidity, lastPressure);
 }
 
@@ -48,9 +48,9 @@ void handleMeasure() {
 
   String json = "{";
   json += "\"id\":\"" + String(DEVICE_ID) + "\",";
-  json += "\"temp\":" + String(lastTemperature, 1) + ",";
-  json += "\"humid\":" + String(lastHumidity, 1) + ",";
-  json += "\"press\":" + String(lastPressure / 1000.0f, 1);
+  json += "\"temp\":" + String(lastTemperature, 2) + ",";
+  json += "\"humid\":" + String(lastHumidity, 2) + ",";
+  json += "\"press\":" + String(lastPressure, 2); // Pa, same units/precision as the hub
   json += "}";
   server.send(200, "application/json", json);
 }
@@ -59,9 +59,9 @@ void handleData() {
   String json = "{";
   json += "\"id\":\"" + String(DEVICE_ID) + "\",";
   json += "\"name\":\"" + String(DEVICE_NAME) + "\",";
-  json += "\"temp\":" + String(lastTemperature, 1) + ",";
-  json += "\"humid\":" + String(lastHumidity, 1) + ",";
-  json += "\"press\":" + String(lastPressure / 1000.0f, 1) + ",";
+  json += "\"temp\":" + String(lastTemperature, 2) + ",";
+  json += "\"humid\":" + String(lastHumidity, 2) + ",";
+  json += "\"press\":" + String(lastPressure, 2) + ","; // Pa
   json += "\"lastMeasurementMs\":" + String(lastMeasurementMs);
   json += "}";
   server.send(200, "application/json", json);

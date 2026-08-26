@@ -141,7 +141,7 @@ bool fetchNodeMeasure() {
 
   float t = extractJsonFloat(payload, "temp");
   float h = extractJsonFloat(payload, "humid");
-  float p = extractJsonFloat(payload, "press") * 1000.0f; // node sends kPa, we store Pa
+  float p = extractJsonFloat(payload, "press"); // node now sends Pa directly, same as hub
   if (isnan(t) || isnan(h) || isnan(p)) {
     Serial.println("Node measure response could not be parsed");
     return false;
