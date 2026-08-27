@@ -62,6 +62,12 @@ const unsigned long remoteOfflineTimeoutMs = 2UL * 60UL * 60UL * 1000UL;
 
 unsigned long lastMeasurementMs = 0;
 unsigned long lastUploadMs = 0;
+// Drives the hourly ThingSpeak cycle. Deliberately separate from
+// lastMeasurementMs (which readBme280() touches on every read, including
+// "Measure now"/"Refresh" button presses) - otherwise testing with those
+// buttons kept resetting the hourly clock and no scheduled upload ever
+// happened.
+unsigned long lastScheduledUploadCheckMs = 0;
 const unsigned long measurementIntervalMs = 60UL * 60UL * 1000UL;
 
 void updateDeviceReading(DeviceState& d, float t, float h, float p) {
@@ -353,6 +359,7 @@ void setup() {
   readBme280();
   fetchNodeMeasure(); // node has no timer of its own - hub always asks it directly
   sendToThingSpeak();
+  lastScheduledUploadCheckMs = millis();
 
   // Serve the dashboard UI straight from LittleFS (data/ folder contents).
   server.serveStatic("/", LittleFS, "/index.html");
@@ -375,9 +382,10 @@ void setup() {
 void loop() {
   server.handleClient();
 
-  if (millis() - lastMeasurementMs >= measurementIntervalMs) {
+  if (millis() - lastScheduledUploadCheckMs >= measurementIntervalMs) {
     readBme280();
     fetchNodeMeasure(); // node has no timer of its own - hub always asks it directly
     sendToThingSpeak();
+    lastScheduledUploadCheckMs = millis();
   }
 }
